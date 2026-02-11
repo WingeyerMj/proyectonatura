@@ -9,5 +9,8 @@ export default defineConfig({
                 rewrite: (path) => path.replace(/^\/sofia-api/, '')
             }
         }
+    },
+    preview: {
+        allowedHosts: ['proyectonatura.onrender.com']
     }
 })
