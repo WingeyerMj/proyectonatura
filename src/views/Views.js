@@ -979,6 +979,18 @@ export function renderSofiaJornalesStats(laborStats, efficiencyStats, currentCyc
         </p>
     </div>
 
+    <!-- Efficiency Historical Chart -->
+    <div class="section-divider" style="margin: var(--space-8) 0; height: 1px; background: var(--border-subtle);"></div>
+    <h3 style="font-family: 'Outfit'; color: var(--text-primary); margin-bottom: var(--space-6);">📅 Eficiencia de Jornales por Hectárea</h3>
+    <div class="data-table-container animate-fade-in animate-delay-2" style="padding: var(--space-6);">
+        <div style="height: 300px; position: relative;">
+            <canvas id="chart-jornales-eficiencia-historico"></canvas>
+        </div>
+        <p style="text-align: center; color: var(--text-tertiary); font-size: 0.9em; margin-top: var(--space-4);">
+            Evolución de Intensidad Laboral (Jornales/Ha) por mes entre ciclos productivos.
+        </p>
+    </div>
+
     <div class="data-table-container animate-fade-in animate-delay-3">
       <div class="table-header" style="justify-content: space-between;">
         <h3 style="display: flex; align-items: center; gap: var(--space-3);">
@@ -1388,7 +1400,18 @@ export function renderCosechaDashboard(stats) {
     
     <!-- Historical Harvest Chart -->
     <div class="section-divider" style="margin: var(--space-8) 0; height: 1px; background: var(--border-subtle);"></div>
-    <h4 style="margin-bottom: var(--space-6); font-family: 'Outfit'; color: var(--text-secondary);">📅 Evolución Histórica de Cosecha</h4>
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-6);">
+        <h4 style="font-family: 'Outfit'; color: var(--text-secondary); margin: 0;">📅 Evolución Histórica de Cosecha</h4>
+        <div class="filter-group" style="margin: 0;">
+            <select class="form-select sofia-filter-select" id="filter-cosecha-historico-origen" style="padding: 4px 12px; font-size: 0.9em; min-width: 150px;">
+                <option value="">Todo Origen</option>
+                <option value="propia">🍇 Propia</option>
+                <option value="terceros">🤝 Terceros</option>
+            </select>
+        </div>
+    </div>
+
     <div class="data-table-container animate-fade-in animate-delay-3" style="padding: var(--space-6);">
         <div style="height: 300px; position: relative;">
             <canvas id="chart-cosecha-historico"></canvas>
@@ -1680,6 +1703,79 @@ export function renderFertilizacionComparativa(data) {
       <div class="chart-container" style="min-height: 500px; padding: var(--space-6);">
           <div class="chart-header" style="color:var(--color-amber-400)"><span class="chart-title">🌾 Fincas Viejas: Comprado vs Real por Producto</span></div>
           <div class="chart-canvas-wrapper" style="height:450px;"><canvas id="chart-fert-prod-fincasviejas"></canvas></div>
+      </div>
+      <!-- ═══ EL ESPEJO: Nutrientes por Cod Cuartel ═══ -->
+      <div class="section-divider" style="margin: var(--space-6) 0; height: 2px; background: linear-gradient(90deg, transparent, var(--color-primary-500), transparent);"></div>
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-4);">
+        <h3 style="font-family: 'Outfit'; color: var(--color-primary-400); margin: 0;">
+          🍇 El Espejo — <span style="font-size: 0.85em; color: var(--text-tertiary);">Unidades por Cod Cuartel</span>
+        </h3>
+        <div style="display: flex; align-items: center; gap: var(--space-2);">
+          <label for="filter-producto-ee" style="font-family: 'Inter'; font-size: 12px; font-weight: 600; color: var(--text-tertiary);">Producto:</label>
+          <select id="filter-producto-ee" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 6px 12px; color: var(--text-primary); font-family: 'Inter'; font-size: 12px; font-weight: 500; cursor: pointer; min-width: 180px; outline: none; transition: border-color 0.2s;">
+            <option value="" style="color:#000;">Todos los productos</option>
+          </select>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-6);">
+        <div class="chart-container" style="min-height: 380px; padding: var(--space-6);">
+            <div class="chart-header" style="color: #34d399;">
+              <span class="chart-title">🧪 Nitrógeno (N)</span>
+              <span style="font-size: 0.75em; color: var(--text-tertiary); margin-left: var(--space-2);">Unidades</span>
+            </div>
+            <div class="chart-canvas-wrapper" style="height:320px;"><canvas id="chart-fert-unidades-n-ee"></canvas></div>
+        </div>
+        <div class="chart-container" style="min-height: 380px; padding: var(--space-6);">
+            <div class="chart-header" style="color: #eab308;">
+              <span class="chart-title">🔬 Fósforo (P)</span>
+              <span style="font-size: 0.75em; color: var(--text-tertiary); margin-left: var(--space-2);">Unidades</span>
+            </div>
+            <div class="chart-canvas-wrapper" style="height:320px;"><canvas id="chart-fert-unidades-p-ee"></canvas></div>
+        </div>
+        <div class="chart-container" style="min-height: 380px; padding: var(--space-6);">
+            <div class="chart-header" style="color: #a78bfa;">
+              <span class="chart-title">⚗️ Potasio (K)</span>
+              <span style="font-size: 0.75em; color: var(--text-tertiary); margin-left: var(--space-2);">Unidades</span>
+            </div>
+            <div class="chart-canvas-wrapper" style="height:320px;"><canvas id="chart-fert-unidades-k-ee"></canvas></div>
+        </div>
+      </div>
+
+      <!-- ═══ FINCAS VIEJAS: Nutrientes por Clasifica ═══ -->
+      <div class="section-divider" style="margin: var(--space-6) 0; height: 2px; background: linear-gradient(90deg, transparent, var(--color-amber-500), transparent);"></div>
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-4);">
+        <h3 style="font-family: 'Outfit'; color: var(--color-amber-400); margin: 0;">
+          🌾 Fincas Viejas — <span style="font-size: 0.85em; color: var(--text-tertiary);">Unidades por Clasifica</span>
+        </h3>
+        <div style="display: flex; align-items: center; gap: var(--space-2);">
+          <label for="filter-producto-fv" style="font-family: 'Inter'; font-size: 12px; font-weight: 600; color: var(--text-tertiary);">Producto:</label>
+          <select id="filter-producto-fv" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 6px 12px; color: var(--text-primary); font-family: 'Inter'; font-size: 12px; font-weight: 500; cursor: pointer; min-width: 180px; outline: none; transition: border-color 0.2s;">
+            <option value="" style="color:#000;">Todos los productos</option>
+          </select>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-6);">
+        <div class="chart-container" style="min-height: 380px; padding: var(--space-6);">
+            <div class="chart-header" style="color: #34d399;">
+              <span class="chart-title">🧪 Nitrógeno (N)</span>
+              <span style="font-size: 0.75em; color: var(--text-tertiary); margin-left: var(--space-2);">Unidades</span>
+            </div>
+            <div class="chart-canvas-wrapper" style="height:320px;"><canvas id="chart-fert-unidades-n-fv"></canvas></div>
+        </div>
+        <div class="chart-container" style="min-height: 380px; padding: var(--space-6);">
+            <div class="chart-header" style="color: #eab308;">
+              <span class="chart-title">🔬 Fósforo (P)</span>
+              <span style="font-size: 0.75em; color: var(--text-tertiary); margin-left: var(--space-2);">Unidades</span>
+            </div>
+            <div class="chart-canvas-wrapper" style="height:320px;"><canvas id="chart-fert-unidades-p-fv"></canvas></div>
+        </div>
+        <div class="chart-container" style="min-height: 380px; padding: var(--space-6);">
+            <div class="chart-header" style="color: #a78bfa;">
+              <span class="chart-title">⚗️ Potasio (K)</span>
+              <span style="font-size: 0.75em; color: var(--text-tertiary); margin-left: var(--space-2);">Unidades</span>
+            </div>
+            <div class="chart-canvas-wrapper" style="height:320px;"><canvas id="chart-fert-unidades-k-fv"></canvas></div>
+        </div>
       </div>
       <div class="chart-container" style="min-height: 500px; padding: var(--space-6);">
           <div class="chart-header"><span class="chart-title">Detalle Comparativo por Clasificación (L)</span></div>

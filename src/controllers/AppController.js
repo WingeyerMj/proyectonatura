@@ -266,6 +266,10 @@ export class AppController {
                 this.renderHistoricalChart(histData);
             });
 
+            SofiaApiModel.getHistoricalEfficiencyComparison(filters).then(histData => {
+                this.renderHistoricalEfficiencyChart(histData);
+            });
+
             // Populate filter lists dynamically based on active data
             const updateFilterList = (id, key, allData) => {
                 const sel = document.getElementById(id);
@@ -352,6 +356,48 @@ export class AppController {
         });
     }
 
+    renderHistoricalEfficiencyChart(histData) {
+        const ctx = document.getElementById('chart-jornales-eficiencia-historico');
+        if (!ctx) return;
+
+        if (this.charts.historicoEficiencia) {
+            this.charts.historicoEficiencia.destroy();
+        }
+
+        // @ts-ignore
+        this.charts.historicoEficiencia = new Chart(ctx, {
+            type: 'line',
+            data: histData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top', labels: { color: '#f1f5f9' } },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function (context) {
+                                let label = context.dataset.label || '';
+                                if (label) label += ': ';
+                                if (context.parsed.y !== null) label += new Intl.NumberFormat('es-AR').format(context.parsed.y) + ' Jor/Ha';
+                                return label;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { ticks: { color: '#cbd5e1' }, grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false } },
+                    y: {
+                        ticks: { color: '#cbd5e1' },
+                        grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false },
+                        title: { display: true, text: 'Intensidad (Jor/Ha)', color: '#64748b' }
+                    }
+                }
+            }
+        });
+    }
+
     // ── Sección 2: COSECHA ──
     // ── Sección 2: COSECHA ──
     async renderCosechaSection(container) {
@@ -404,42 +450,54 @@ export class AppController {
             finca: '', predio: '', variedad: ''
         };
 
-        const updateDashboard = async () => {
-            const dashboard = document.getElementById('cosecha-dashboard-container');
-            if (!dashboard) return;
+        const dashboard = document.getElementById('cosecha-dashboard-container');
+        if (!dashboard) return;
 
-            const data = await SofiaApiModel.fetchCosecha(filters);
-            const stats = SofiaApiModel.getCosechaDashboardStats(data);
-            dashboard.innerHTML = renderCosechaDashboard(stats);
+        const data = await SofiaApiModel.fetchCosecha(filters);
+        const stats = SofiaApiModel.getCosechaDashboardStats(data);
+        dashboard.innerHTML = renderCosechaDashboard(stats);
 
-            // Populate filter lists dynamically based on active data
-            const updateFilterList = (id, key, allData) => {
-                const sel = document.getElementById(id);
-                if (!sel) return;
-                const currentVal = filters[key];
+        // Bind Origin Filter for Chart
+        const originFilter = document.getElementById('filter-cosecha-historico-origen');
+        if (originFilter) {
+            // Set initial value if we want to persist it, or just read it
+            originFilter.addEventListener('change', async (e) => {
+                const origin = e.target.value;
+                const histStats = await SofiaApiModel.getHistoricalCosechaStats({ ...filters, origen: origin });
+                this.renderCosechaHistoryChart(histStats);
+            });
+        }
 
-                let subData = allData;
-                if (filters.finca) subData = subData.filter(r => r.finca === filters.finca);
+        // Initial Chart Load
+        const histStats = await SofiaApiModel.getHistoricalCosechaStats(filters);
+        this.renderCosechaHistoryChart(histStats);
 
-                const uniqueVals = [...new Set(subData.map(r => {
-                    if (key === 'predio') return r.clasifica || r.clasificacion || r.Clasificacion || r.Clasifica;
-                    if (key === 'variedad') return r.variedad || r.variedades || r.Variedad || r.Variedades;
-                    return r[key];
-                }))].filter(v => v !== null && v !== undefined && v !== '').sort();
+        // Populate filter lists dynamically based on active data
+        const updateFilterList = (id, key, allData) => {
+            const sel = document.getElementById(id);
+            if (!sel) return;
+            const currentVal = filters[key];
+
+            let subData = allData;
+            if (filters.finca) subData = subData.filter(r => r.finca === filters.finca);
+
+            const uniqueVals = [...new Set(subData.map(r => {
+                if (key === 'predio') return r.clasifica || r.clasificacion || r.Clasificacion || r.Clasifica;
+                if (key === 'variedad') return r.variedad || r.variedades || r.Variedad || r.Variedades;
+                return r[key];
+            }))].filter(v => v !== null && v !== undefined && v !== '').sort();
 
 
-                sel.innerHTML = `<option value="">${key === 'predio' ? 'Todos' : 'Todas'}</option>` +
-                    uniqueVals.map(v => `<option value="${v}" ${v === currentVal ? 'selected' : ''}>${v}</option>`).join('');
-            };
-
-            updateFilterList('filter-cosecha-predio', 'predio', SofiaApiModel.DATA_COSECHA);
-            updateFilterList('filter-cosecha-variedad', 'variedad', SofiaApiModel.DATA_COSECHA);
-
-            // Historical Chart
-            const historyStats = await SofiaApiModel.getHistoricalCosechaStats(filters);
-            this.renderCosechaHistoryChart(historyStats);
+            sel.innerHTML = `<option value="">${key === 'predio' ? 'Todos' : 'Todas'}</option>` +
+                uniqueVals.map(v => `<option value="${v}" ${v === currentVal ? 'selected' : ''}>${v}</option>`).join('');
         };
 
+        updateFilterList('filter-cosecha-predio', 'predio', SofiaApiModel.DATA_COSECHA);
+        updateFilterList('filter-cosecha-variedad', 'variedad', SofiaApiModel.DATA_COSECHA);
+
+        // Historical Chart
+        const historyStats = await SofiaApiModel.getHistoricalCosechaStats(filters);
+        this.renderCosechaHistoryChart(historyStats);
         const bind = (id, key) => {
             document.getElementById(id)?.addEventListener('change', (e) => {
                 filters[key] = e.target.value;
@@ -1917,6 +1975,8 @@ export class AppController {
                 }
             });
         }
+
+        this.renderFertUnidadesChart();
     }
 
     // ── Toast Notifications ──
@@ -1999,6 +2059,173 @@ export class AppController {
                     }
                 }
             }
+        });
+    }
+
+    renderFertUnidadesChart() {
+        const currentYear = new Date().getFullYear();
+        const currentMonth = new Date().getMonth() + 1;
+        const startYear = currentMonth >= 5 ? currentYear : currentYear - 1;
+        const currentCycle = `${startYear}-${startYear + 1}`;
+        const baseFilters = { ...this.sofiaFilters, ciclo: currentCycle };
+
+        const productos = SofiaImportModel.getProductosFertilizacion();
+
+        // Helper: populate & bind a product dropdown
+        const setupProductFilter = (selectId, filterKey) => {
+            const sel = document.getElementById(selectId);
+            if (!sel) return;
+            if (sel.options.length <= 1) {
+                productos.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p;
+                    opt.textContent = p;
+                    opt.style.color = '#000';
+                    if (p === this[filterKey]) opt.selected = true;
+                    sel.appendChild(opt);
+                });
+            }
+            if (!sel._bound) {
+                sel._bound = true;
+                sel.addEventListener('change', () => {
+                    this[filterKey] = sel.value || '';
+                    this.renderFertUnidadesChart();
+                });
+            }
+        };
+
+        setupProductFilter('filter-producto-ee', 'fertProductoEE');
+        setupProductFilter('filter-producto-fv', 'fertProductoFV');
+
+        // Build filters per finca
+        const filtersEE = { ...baseFilters };
+        const filtersFV = { ...baseFilters };
+        if (this.fertProductoEE) filtersEE.producto = this.fertProductoEE;
+        if (this.fertProductoFV) filtersFV.producto = this.fertProductoFV;
+
+        // Destroy all previous nutrient charts
+        ['n-ee', 'p-ee', 'k-ee', 'n-fv', 'p-fv', 'k-fv'].forEach(id => {
+            const key = `sofia-fert-unidades-${id}`;
+            if (this.charts[key]) {
+                this.charts[key].destroy();
+                delete this.charts[key];
+            }
+        });
+
+        // Get data for each finca with independent product filters
+        const dataEE = SofiaImportModel.getFertilizacionUnidades(filtersEE, 'espejo');
+        const dataFV = SofiaImportModel.getFertilizacionUnidades(filtersFV, 'fincasviejas');
+
+        // Nutrient config (colors)
+        const nutrients = {
+            n: {
+                budgetColor: 'rgba(52, 211, 153, 0.35)', budgetBorder: 'rgba(52, 211, 153, 0.8)',
+                realColor: 'rgba(52, 211, 153, 0.85)', realBorder: 'rgba(52, 211, 153, 1)',
+            },
+            p: {
+                budgetColor: 'rgba(234, 179, 8, 0.35)', budgetBorder: 'rgba(234, 179, 8, 0.8)',
+                realColor: 'rgba(234, 179, 8, 0.85)', realBorder: 'rgba(234, 179, 8, 1)',
+            },
+            k: {
+                budgetColor: 'rgba(167, 139, 250, 0.35)', budgetBorder: 'rgba(167, 139, 250, 0.8)',
+                realColor: 'rgba(167, 139, 250, 0.85)', realBorder: 'rgba(167, 139, 250, 1)',
+            }
+        };
+
+        // Helper to create a single nutrient chart
+        const createChart = (canvasId, chartKey, data, colors) => {
+            const ctx = document.getElementById(canvasId);
+            if (!ctx || !data || data.length === 0) return;
+
+            this.charts[chartKey] = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.map(d => d.name),
+                    datasets: [
+                        {
+                            label: 'Presupuestado',
+                            data: data.map(d => d.budget),
+                            backgroundColor: colors.budgetColor,
+                            borderColor: colors.budgetBorder,
+                            borderWidth: 2, borderRadius: 6, borderSkipped: false,
+                            categoryPercentage: 0.7, barPercentage: 0.85
+                        },
+                        {
+                            label: 'Real Aplicado',
+                            data: data.map(d => d.real),
+                            backgroundColor: colors.realColor,
+                            borderColor: colors.realBorder,
+                            borderWidth: 2, borderRadius: 6, borderSkipped: false,
+                            categoryPercentage: 0.7, barPercentage: 0.85
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                boxWidth: 14, font: { family: 'Inter', size: 11, weight: '500' },
+                                color: 'rgba(255,255,255,0.75)', padding: 16,
+                                usePointStyle: true, pointStyle: 'rectRounded'
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                            titleFont: { family: 'Inter', size: 13, weight: '600' },
+                            bodyFont: { family: 'Inter', size: 12 },
+                            padding: 12, cornerRadius: 8,
+                            callbacks: {
+                                label: (c) => {
+                                    const formatted = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 }).format(c.parsed.y);
+                                    return `  ${c.dataset.label}: ${formatted} Unid.`;
+                                },
+                                afterBody: (items) => {
+                                    if (items.length < 2) return '';
+                                    const budget = items[0].parsed.y;
+                                    const real = items[1].parsed.y;
+                                    if (budget > 0) {
+                                        const pct = ((real / budget) * 100).toFixed(1);
+                                        return `\n  📊 Ejecución: ${pct}%`;
+                                    }
+                                    return '';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: 'rgba(255,255,255,0.6)', font: { family: 'Inter', size: 10, weight: '500' }, maxRotation: 45, minRotation: 0 }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(255,255,255,0.06)', lineWidth: 1 },
+                            ticks: {
+                                color: 'rgba(255,255,255,0.55)', font: { family: 'Inter', size: 10 },
+                                callback: function (value) {
+                                    if (value >= 1000) return (value / 1000).toFixed(1) + 'k';
+                                    return new Intl.NumberFormat('es-AR').format(value);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        };
+
+        // Render El Espejo charts (N, P, K)
+        Object.entries(nutrients).forEach(([nut, colors]) => {
+            const flatData = dataEE.map(d => ({ name: d.name, budget: d[nut].budget, real: d[nut].real }));
+            createChart(`chart-fert-unidades-${nut}-ee`, `sofia-fert-unidades-${nut}-ee`, flatData, colors);
+        });
+
+        // Render Fincas Viejas charts (N, P, K)
+        Object.entries(nutrients).forEach(([nut, colors]) => {
+            const flatData = dataFV.map(d => ({ name: d.name, budget: d[nut].budget, real: d[nut].real }));
+            createChart(`chart-fert-unidades-${nut}-fv`, `sofia-fert-unidades-${nut}-fv`, flatData, colors);
         });
     }
 }

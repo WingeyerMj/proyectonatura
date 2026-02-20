@@ -10,11 +10,17 @@ const COLUMNS_MAP = {
     'Cantidad': ['Cantidad', 'Real Aplicado', 'Cantidad Periodo', 'Monto'],
     'Tipo': ['tipo', 'Tipo Registro', 'Tipo'],
     'Cuartel': ['Cuartel / Potrero', 'Cuartel', 'Cod Cuartel', 'Sector'],
+    'CodCuartel': ['Cod Cuartel'],
     'Finca': ['Predio', 'Finca', 'Farm'],
     'Clasifica': ['Clasifica', 'Claseifica', 'Clasificacion', 'Sub-Predio'],
     'Dosis': ['Dosis', 'dosis', 'Dose'],
     'Variedad': ['Variedad', 'variedad', 'Variety'],
-    'Costo': ['Total Producto', 'Costo', 'Cost', 'Importe']
+    'Costo': ['Total Producto', 'Costo', 'Cost', 'Importe'],
+    'N': ['Unidades N', 'N', 'Nitrogeno', 'Units N', 'Unid N'],
+    'P': ['Unidades P', 'P', 'Unidades P2O5', 'P205', 'P2O5', 'Fosforo', 'Units P', 'Unid P'],
+    'K': ['Unidades K', 'K', 'Unidades K2O', 'K20', 'K2O', 'Potasio', 'Units K', 'Unid K'],
+    'Has': ['Has Totales', 'Has', 'Hectareas', 'Superficie'],
+    'Ca': ['Unidades de Calcio', 'Unidades Ca', 'Calcio', 'Ca', 'CaO', 'Unid Ca']
 };
 
 const REQUIRED_KEYS = ['Fecha', 'Labor', 'Producto', 'Cantidad'];
@@ -87,6 +93,7 @@ export class SofiaImportModel {
             const costo = parseFloat(rawCosto) || 0;
 
             const cuartel = colMap['Cuartel'] !== undefined ? cols[colMap['Cuartel']] : 'Sin Asignar';
+            const codCuartel = colMap['CodCuartel'] !== undefined ? (cols[colMap['CodCuartel']] || '').trim() : '';
             const dosis = colMap['Dosis'] !== undefined ? cols[colMap['Dosis']] : '';
 
             // Finca logic
@@ -117,9 +124,9 @@ export class SofiaImportModel {
             }
 
             // Tipo cleaning
-            let tipo = colMap['Tipo'] !== undefined ? cols[colMap['Tipo']] : 'Real';
-            tipo = tipo.toLowerCase();
-            if (tipo.includes('presupuestado')) {
+            let tipoRaw = colMap['Tipo'] !== undefined ? cols[colMap['Tipo']] : 'Real';
+            let tipo = (tipoRaw || '').toLowerCase();
+            if (tipo.includes('presupuestado') || tipo.includes('presupuesto') || tipo.includes('ppto')) {
                 if (tipo.includes('pos')) tipo = 'Presupuestado-Pos';
                 else tipo = 'Presupuestado-Pre';
             } else {
@@ -133,6 +140,7 @@ export class SofiaImportModel {
                 producto,
                 cantidad,
                 cuartel,
+                cod_cuartel: codCuartel || cuartel,
                 dosis,
                 costo_total: costo,
                 finca: predioFull,
@@ -140,7 +148,12 @@ export class SofiaImportModel {
                 clasifica: clasifica,
                 variedad: (colMap['Variedad'] !== undefined && cols[colMap['Variedad']]) ? cols[colMap['Variedad']] : ((cuartel.split('-')[2] || '').trim() || 'Sin Variedad'),
                 categoria: this.classify(labor, producto),
-                ciclo: this.getCycle(fecha)
+                ciclo: this.getCycle(fecha),
+                n_units: colMap['N'] !== undefined ? (parseFloat(cols[colMap['N']].replace(/\./g, '').replace(',', '.')) || 0) : 0,
+                k_units: colMap['K'] !== undefined ? (parseFloat(cols[colMap['K']].replace(/\./g, '').replace(',', '.')) || 0) : 0,
+                p_units: colMap['P'] !== undefined ? (parseFloat(cols[colMap['P']].replace(/\./g, '').replace(',', '.')) || 0) : 0,
+                ca_units: colMap['Ca'] !== undefined ? (parseFloat(cols[colMap['Ca']].replace(/\./g, '').replace(',', '.')) || 0) : 0,
+                has_totales: colMap['Has'] !== undefined ? (parseFloat(cols[colMap['Has']].replace(/\./g, '').replace(',', '.')) || 0) : 0
             });
         }
         return { rows };
@@ -326,5 +339,149 @@ export class SofiaImportModel {
             pptado: sortedKeys.map(k => grouped[k].pre),
             real: sortedKeys.map(k => grouped[k].real)
         };
+    }
+
+    static getProductosFertilizacion() {
+        return ['NUTRI 1075 M', 'NUTRI 1683 M', 'NUTRI 1684 M'];
+    }
+
+    static getFertilizacionUnidades(filters = {}, fincaGroup = 'espejo') {
+        const compositions = {
+            'NITRATO DE CALCIO': { n: 0.155, k: 0, p: 0 },
+            'NUTRI 1075 M': { n: 0.0048868, k: 0.0029810, p: 0 },
+            'NUTRI 1683 M': { n: 0.0126, k: 0.0284, p: 0 },
+            'NUTRI 1684 M': { n: 0.0062, k: 0.0125, p: 0 },
+            'SULFATO DE POTASIO': { n: 0, k: 0.50, p: 0 },
+            'UREA': { n: 0.46, k: 0, p: 0 }
+        };
+        const nutrientDensities = {};
+        const budgetStats = {};
+        const processedBudgets = new Set();
+
+        // Only consider these products for nutrient charts
+        const allowedProducts = ['NUTRI 1075 M', 'NUTRI 1683 M', 'NUTRI 1684 M'];
+
+        // Helper: check if record belongs to requested finca group
+        const belongsToGroup = (r) => {
+            const finca = (r.finca_original || '').toLowerCase();
+            if (fincaGroup === 'espejo') return finca.includes('espejo');
+            return !finca.includes('espejo'); // fincasviejas = everything else
+        };
+
+        // Helper: determine group key
+        // El Espejo → por Cod Cuartel (EEI 1, EEI 2, EEII 1, etc.)
+        // Fincas Viejas → por Clasifica (Camino Truncado, La Chimbera, Puente Alto)
+        const getGroupKey = (r) => {
+            if (fincaGroup === 'espejo') {
+                return (r.cod_cuartel || r.cuartel || r.clasifica || 'Otros').trim();
+            }
+            return r.clasifica || 'Otros';
+        };
+
+        // ── 1. Process BUDGET rows ──
+        this.REGISTROS.forEach(r => {
+            if (!belongsToGroup(r)) return;
+
+            const tipo = (r.tipo_registro || '').toLowerCase();
+            const isBudget = tipo.includes('presupuestado') || tipo.includes('presupuesto') || tipo.includes('ppto');
+            if (!isBudget) return;
+
+            const prod = (r.producto || '').toUpperCase();
+            // Only allowed products
+            if (!allowedProducts.includes(prod)) return;
+            // Product filter (individual selection)
+            if (filters.producto && prod !== filters.producto.toUpperCase()) return;
+            if (r.cantidad > 0 && (r.n_units > 0 || r.p_units > 0 || r.k_units > 0)) {
+                if (!nutrientDensities[prod]) {
+                    nutrientDensities[prod] = { n: 0, p: 0, k: 0, totalQty: 0 };
+                }
+                nutrientDensities[prod].n += r.n_units;
+                nutrientDensities[prod].p += r.p_units;
+                nutrientDensities[prod].k += r.k_units;
+                nutrientDensities[prod].totalQty += r.cantidad;
+
+                const key = getGroupKey(r);
+                const uniqueKey = `${r.clasifica}-${r.cod_cuartel}-${r.producto}-${r.ciclo}-${tipo}`;
+
+                const cycleMatch = !filters.ciclo || r.ciclo === filters.ciclo || r.ciclo === 'Unknown';
+                const fincaMatch = !filters.finca || r.finca_original === filters.finca;
+                const predioMatch = !filters.predio || r.clasifica === filters.predio;
+
+                if (cycleMatch && fincaMatch && predioMatch) {
+                    if (!processedBudgets.has(uniqueKey)) {
+                        processedBudgets.add(uniqueKey);
+                        if (!budgetStats[key]) budgetStats[key] = { n: 0, p: 0, k: 0 };
+
+                        budgetStats[key].n += r.n_units;
+                        budgetStats[key].p += r.p_units;
+                        budgetStats[key].k += r.k_units;
+                    }
+                }
+            }
+        });
+
+        // ── Compute average nutrient ratios (units per liter) ──
+        const productRatios = {};
+        Object.entries(nutrientDensities).forEach(([prod, sums]) => {
+            if (sums.totalQty > 0) {
+                productRatios[prod] = {
+                    n: sums.n / sums.totalQty,
+                    p: sums.p / sums.totalQty,
+                    k: sums.k / sums.totalQty
+                };
+            }
+        });
+
+        // ── 2. Process REAL applied rows ──
+        const all = this.applyFilters(
+            this.REGISTROS.filter(r => r.categoria === 'Fertilizacion' && r.tipo_registro === 'Real' && belongsToGroup(r)),
+            filters
+        );
+        const realStats = {};
+
+        all.forEach(r => {
+            const prod = (r.producto || '').toUpperCase();
+            // Only allowed products
+            if (!allowedProducts.includes(prod)) return;
+            // Product filter (individual selection)
+            if (filters.producto && prod !== filters.producto.toUpperCase()) return;
+
+            const key = getGroupKey(r);
+            if (!realStats[key]) realStats[key] = { n: 0, p: 0, k: 0 };
+
+            let appliedN = 0, appliedP = 0, appliedK = 0;
+
+            if (productRatios[prod]) {
+                const ratios = productRatios[prod];
+                appliedN = r.cantidad * ratios.n;
+                appliedP = r.cantidad * ratios.p;
+                appliedK = r.cantidad * ratios.k;
+            } else {
+                let comp = compositions[prod];
+                if (!comp) {
+                    const foundKey = Object.keys(compositions).find(k => prod.includes(k));
+                    if (foundKey) comp = compositions[foundKey];
+                }
+                if (comp) {
+                    appliedN = r.cantidad * (comp.n || 0);
+                    appliedP = r.cantidad * (comp.p || 0);
+                    appliedK = r.cantidad * (comp.k || 0);
+                }
+            }
+
+            realStats[key].n += appliedN;
+            realStats[key].p += appliedP;
+            realStats[key].k += appliedK;
+        });
+
+        // ── 3. Merge and return ──
+        const allKeys = new Set([...Object.keys(budgetStats), ...Object.keys(realStats)]);
+
+        return Array.from(allKeys).map(name => ({
+            name,
+            n: { budget: parseFloat((budgetStats[name]?.n || 0).toFixed(2)), real: parseFloat((realStats[name]?.n || 0).toFixed(2)) },
+            p: { budget: parseFloat((budgetStats[name]?.p || 0).toFixed(2)), real: parseFloat((realStats[name]?.p || 0).toFixed(2)) },
+            k: { budget: parseFloat((budgetStats[name]?.k || 0).toFixed(2)), real: parseFloat((realStats[name]?.k || 0).toFixed(2)) },
+        })).sort((a, b) => a.name.localeCompare(b.name));
     }
 }

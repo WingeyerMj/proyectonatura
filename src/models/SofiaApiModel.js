@@ -183,6 +183,16 @@ export class SofiaApiModel {
             if (filters.variedad && r.variedad !== filters.variedad) return false;
             if (filters.desde && new Date(r.fecha) < new Date(filters.desde)) return false;
             if (filters.hasta && new Date(r.fecha) > new Date(filters.hasta)) return false;
+
+            if (filters.origen) {
+                const PROPIA_KEYWORDS = ['Camino Truncado', 'EEI', 'EEII', 'EEIII', 'La Chimbera', 'Puente Alto'];
+                const clasif = (r.clasifica || '').toUpperCase();
+                const isPropia = PROPIA_KEYWORDS.some(k => clasif.includes(k.toUpperCase()));
+
+                if (filters.origen === 'propia' && !isPropia) return false;
+                if (filters.origen === 'terceros' && isPropia) return false;
+            }
+
             return true;
         });
     }
@@ -481,6 +491,95 @@ export class SofiaApiModel {
     }
 
     /**
+     * Similar to getHistoricalComparison but returns normalized Jornales/Ha
+     */
+    static async getHistoricalEfficiencyComparison(baseFilters = {}) {
+        const cycles = ['2021-2022', '2022-2023', '2023-2024', '2024-2025', '2025-2026'];
+        const monthNames = ['May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic', 'Ene', 'Feb', 'Mar', 'Abr'];
+
+        const getRelativeMonth = (dateStr) => {
+            if (!dateStr) return -1;
+            let d = new Date(dateStr);
+            if (isNaN(d.getTime())) {
+                let parts = dateStr.split('-');
+                if (parts.length === 3) {
+                    if (parseInt(parts[0]) > 2000) d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                    else if (parseInt(parts[2]) > 2000) d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+                }
+                if (isNaN(d.getTime())) {
+                    parts = dateStr.split('/');
+                    if (parts.length === 3) d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+                }
+            }
+            if (isNaN(d.getTime())) return -1;
+            const m = d.getMonth();
+            return m >= 4 ? m - 4 : m + 8;
+        };
+
+        const datasets = [];
+
+        for (const c of cycles) {
+            let cycleData = await this.fetchCycleData(c);
+
+            const filtered = cycleData.filter(r => {
+                if (baseFilters.finca && r.finca !== baseFilters.finca) return false;
+                if (baseFilters.predio && r.clasifica !== baseFilters.predio) return false;
+                if (baseFilters.variedad && r.variedad !== baseFilters.variedad) return false;
+                return true;
+            });
+
+            // Calculate Total Area for this filtered dataset (Total Unique Hectares worked in the cycle)
+            const uniqueCuarteles = new Map();
+            let totalHa = 0;
+
+            filtered.forEach(r => {
+                if (r.cuartel && !uniqueCuarteles.has(r.cuartel)) {
+                    // Only count if Ha is > 0
+                    if (r.hectares > 0) {
+                        uniqueCuarteles.set(r.cuartel, r.hectares);
+                        totalHa += r.hectares;
+                    }
+                }
+            });
+
+            // Prevent division by zero
+            if (totalHa === 0) totalHa = 1;
+
+            const monthlySum = new Array(12).fill(0);
+            filtered.forEach(r => {
+                const idx = getRelativeMonth(r.fecha);
+                if (idx >= 0 && idx < 12) {
+                    monthlySum[idx] += r.totalJornadas;
+                }
+            });
+
+            // Normalize by Area
+            const monthlyEfficiency = monthlySum.map(j => parseFloat((j / totalHa).toFixed(2)));
+
+            datasets.push({
+                label: `Ciclo ${c}`,
+                data: monthlyEfficiency,
+                rawTotals: monthlySum,
+                totalHa: totalHa, // Helpful for debugging tooltip
+                tension: 0.4,
+                fill: false
+            });
+        }
+
+        const colors = ['#94a3b8', '#60a5fa', '#34d399', '#fbbf24', '#8b5cf6'];
+
+        return {
+            labels: monthNames,
+            datasets: datasets.map((d, i) => ({
+                ...d,
+                borderColor: colors[i % colors.length],
+                pointBackgroundColor: colors[i % colors.length],
+                borderWidth: i === datasets.length - 1 ? 3 : 2
+            }))
+        };
+    }
+
+    /**
      * Fetches annual harvest yields for comparison
      */
     static async getHistoricalCosechaStats(baseFilters = {}) {
@@ -499,13 +598,24 @@ export class SofiaApiModel {
             dataPoints.push(totalkg);
         }
 
+        let bgColor = 'rgba(74, 222, 128, 0.6)'; // Green (Default)
+        let borderColor = 'rgba(74, 222, 128, 1)';
+
+        if (baseFilters.origen === 'propia') {
+            bgColor = 'rgba(59, 130, 246, 0.6)'; // Blue (Primary)
+            borderColor = 'rgba(59, 130, 246, 1)';
+        } else if (baseFilters.origen === 'terceros') {
+            bgColor = 'rgba(168, 85, 247, 0.6)'; // Purple (Accent)
+            borderColor = 'rgba(168, 85, 247, 1)';
+        }
+
         return {
             labels: cycles,
             datasets: [{
                 label: 'Producción Total (Kg)',
                 data: dataPoints,
-                backgroundColor: 'rgba(74, 222, 128, 0.6)', // Green-ish
-                borderColor: 'rgba(74, 222, 128, 1)',
+                backgroundColor: bgColor,
+                borderColor: borderColor,
                 borderWidth: 1,
                 borderRadius: 6
             }]
