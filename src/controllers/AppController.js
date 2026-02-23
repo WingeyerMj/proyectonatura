@@ -453,25 +453,6 @@ export class AppController {
         const dashboard = document.getElementById('cosecha-dashboard-container');
         if (!dashboard) return;
 
-        const data = await SofiaApiModel.fetchCosecha(filters);
-        const stats = SofiaApiModel.getCosechaDashboardStats(data);
-        dashboard.innerHTML = renderCosechaDashboard(stats);
-
-        // Bind Origin Filter for Chart
-        const originFilter = document.getElementById('filter-cosecha-historico-origen');
-        if (originFilter) {
-            // Set initial value if we want to persist it, or just read it
-            originFilter.addEventListener('change', async (e) => {
-                const origin = e.target.value;
-                const histStats = await SofiaApiModel.getHistoricalCosechaStats({ ...filters, origen: origin });
-                this.renderCosechaHistoryChart(histStats);
-            });
-        }
-
-        // Initial Chart Load
-        const histStats = await SofiaApiModel.getHistoricalCosechaStats(filters);
-        this.renderCosechaHistoryChart(histStats);
-
         // Populate filter lists dynamically based on active data
         const updateFilterList = (id, key, allData) => {
             const sel = document.getElementById(id);
@@ -492,12 +473,35 @@ export class AppController {
                 uniqueVals.map(v => `<option value="${v}" ${v === currentVal ? 'selected' : ''}>${v}</option>`).join('');
         };
 
-        updateFilterList('filter-cosecha-predio', 'predio', SofiaApiModel.DATA_COSECHA);
-        updateFilterList('filter-cosecha-variedad', 'variedad', SofiaApiModel.DATA_COSECHA);
+        // ── updateDashboard: re-filter & re-render ──
+        const updateDashboard = async () => {
+            const dashboard = document.getElementById('cosecha-dashboard-container');
+            if (!dashboard) return;
 
-        // Historical Chart
-        const historyStats = await SofiaApiModel.getHistoricalCosechaStats(filters);
-        this.renderCosechaHistoryChart(historyStats);
+            // Re-fetch if cycle changed, otherwise use cached data
+            const data = await SofiaApiModel.fetchCosecha(filters);
+            const filtered = SofiaApiModel.applyFilters(data, filters);
+            const stats = SofiaApiModel.getCosechaDashboardStats(filtered);
+            dashboard.innerHTML = renderCosechaDashboard(stats);
+
+            // Update dynamic filter options
+            updateFilterList('filter-cosecha-predio', 'predio', data);
+            updateFilterList('filter-cosecha-variedad', 'variedad', data);
+
+            // Rebind origin filter for historical chart
+            const originFilter = document.getElementById('filter-cosecha-historico-origen');
+            if (originFilter) {
+                originFilter.addEventListener('change', async (e) => {
+                    const histStats = await SofiaApiModel.getHistoricalCosechaStats({ ...filters, origen: e.target.value });
+                    this.renderCosechaHistoryChart(histStats);
+                });
+            }
+
+            // Re-render historical chart
+            const histStats = await SofiaApiModel.getHistoricalCosechaStats(filters);
+            this.renderCosechaHistoryChart(histStats);
+        };
+
         const bind = (id, key) => {
             document.getElementById(id)?.addEventListener('change', (e) => {
                 filters[key] = e.target.value;
@@ -1941,40 +1945,96 @@ export class AppController {
             });
         }
 
-        // 2. Timeline Chart (Weekly Evolution)
-        const ctxWeekly = document.getElementById('chart-fert-weekly');
-        if (ctxWeekly) {
-            const weeklyData = SofiaImportModel.getWeeklyEvolution(this.sofiaFilters);
-            this.charts['sofia-fert-weekly'] = new Chart(ctxWeekly, {
-                type: 'line',
+        // 2. Timeline Charts (Weekly per-week Evolution) — one per finca with product filter
+        const weeklyConfigs = [
+            { id: 'chart-fert-weekly-ee', filterId: 'filter-weekly-producto-ee', finca: 'El Espejo', barColor: 'rgba(167, 139, 250, 0.7)', barBorder: 'rgba(167, 139, 250, 1)', lineColor: 'rgba(52, 211, 153, 1)' },
+            { id: 'chart-fert-weekly-fv', filterId: 'filter-weekly-producto-fv', finca: 'Fincas Viejas', barColor: 'rgba(96, 165, 250, 0.7)', barBorder: 'rgba(96, 165, 250, 1)', lineColor: 'rgba(251, 191, 36, 1)' }
+        ];
+
+        const renderWeeklyChart = (cfg) => {
+            const ctx = document.getElementById(cfg.id);
+            if (!ctx) return;
+
+            // Destroy existing chart if any
+            const chartKey = `sofia-${cfg.id}`;
+            if (this.charts[chartKey]) {
+                this.charts[chartKey].destroy();
+                delete this.charts[chartKey];
+            }
+
+            const filterEl = document.getElementById(cfg.filterId);
+            const productoFilter = filterEl ? filterEl.value : '';
+            const weeklyData = SofiaImportModel.getWeeklyEvolution(this.sofiaFilters, cfg.finca, productoFilter);
+
+            this.charts[chartKey] = new Chart(ctx, {
+                type: 'bar',
                 data: {
                     labels: weeklyData.labels,
                     datasets: [
                         {
-                            label: 'Presupuestado (Semanal)',
+                            type: 'line',
+                            label: 'Presupuesto Semanal',
                             data: weeklyData.pptado,
-                            borderColor: 'rgba(52, 211, 153, 1)',
-                            backgroundColor: 'rgba(52, 211, 153, 0.2)',
-                            tension: 0.3, fill: true
+                            borderColor: cfg.lineColor,
+                            backgroundColor: 'transparent',
+                            borderWidth: 2.5,
+                            borderDash: [8, 4],
+                            tension: 0, fill: false,
+                            pointRadius: 0, pointHoverRadius: 4,
+                            order: 1
                         },
                         {
-                            label: 'Real Aplicado (Semanal)',
+                            type: 'bar',
+                            label: 'Real Aplicado Semanal',
                             data: weeklyData.real,
-                            borderColor: 'rgba(167, 139, 250, 1)',
-                            backgroundColor: 'rgba(167, 139, 250, 0.2)',
-                            tension: 0.3, fill: true
+                            backgroundColor: cfg.barColor,
+                            borderColor: cfg.barBorder,
+                            borderWidth: 1, borderRadius: 4,
+                            order: 2
                         }
                     ]
                 },
                 options: {
-                    ...this.getChartOptions('Litros (L)'),
+                    ...this.getChartOptions('Litros (L) por Semana'),
                     interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        ...this.getChartOptions('Litros (L) por Semana').scales,
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: {
+                                color: 'rgba(255, 255, 255, 0.5)',
+                                font: { size: 9, family: 'Inter' },
+                                maxRotation: 45, minRotation: 45
+                            }
+                        }
+                    },
                     plugins: {
-                        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${formatCurrency(c.parsed.y)} L` } }
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                color: 'rgba(255,255,255,0.75)',
+                                font: { family: 'Inter', size: 11, weight: '500' },
+                                usePointStyle: true, padding: 16
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: (c) => `${c.dataset.label}: ${formatCurrency(c.parsed.y)} L`
+                            }
+                        }
                     }
                 }
             });
-        }
+        };
+
+        weeklyConfigs.forEach(cfg => {
+            renderWeeklyChart(cfg);
+            // Bind product filter change
+            const filterEl = document.getElementById(cfg.filterId);
+            if (filterEl) {
+                filterEl.addEventListener('change', () => renderWeeklyChart(cfg));
+            }
+        });
 
         this.renderFertUnidadesChart();
     }

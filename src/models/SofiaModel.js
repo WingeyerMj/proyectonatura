@@ -20,7 +20,8 @@ const COLUMNS_MAP = {
     'P': ['Unidades P', 'P', 'Unidades P2O5', 'P205', 'P2O5', 'Fosforo', 'Units P', 'Unid P'],
     'K': ['Unidades K', 'K', 'Unidades K2O', 'K20', 'K2O', 'Potasio', 'Units K', 'Unid K'],
     'Has': ['Has Totales', 'Has', 'Hectareas', 'Superficie'],
-    'Ca': ['Unidades de Calcio', 'Unidades Ca', 'Calcio', 'Ca', 'CaO', 'Unid Ca']
+    'Ca': ['Unidades de Calcio', 'Unidades Ca', 'Calcio', 'Ca', 'CaO', 'Unid Ca'],
+    'Estado': ['Estado', 'estado', 'Status']
 };
 
 const REQUIRED_KEYS = ['Fecha', 'Labor', 'Producto', 'Cantidad'];
@@ -123,6 +124,11 @@ export class SofiaImportModel {
                 predioFull = `${finca} - ${clasifica}`;
             }
 
+            // Estado filtering: only keep 'Presupuesto' and 'Confirmada', skip 'Pendiente'
+            let estado = colMap['Estado'] !== undefined ? (cols[colMap['Estado']] || '').trim() : '';
+            const estadoLower = estado.toLowerCase();
+            if (estadoLower === 'pendiente') continue; // Skip "Pendiente" rows entirely
+
             // Tipo cleaning
             let tipoRaw = colMap['Tipo'] !== undefined ? cols[colMap['Tipo']] : 'Real';
             let tipo = (tipoRaw || '').toLowerCase();
@@ -146,6 +152,7 @@ export class SofiaImportModel {
                 finca: predioFull,
                 finca_original: finca,
                 clasifica: clasifica,
+                estado: estado,
                 variedad: (colMap['Variedad'] !== undefined && cols[colMap['Variedad']]) ? cols[colMap['Variedad']] : ((cuartel.split('-')[2] || '').trim() || 'Sin Variedad'),
                 categoria: this.classify(labor, producto),
                 ciclo: this.getCycle(fecha),
@@ -313,32 +320,96 @@ export class SofiaImportModel {
         });
     }
 
-    static getWeeklyEvolution(filters = {}) {
-        const all = this.applyFilters(this.REGISTROS.filter(r => r.categoria === 'Fertilizacion'), filters);
+    static getWeeklyEvolution(filters = {}, fincaName = '', productoFilter = '') {
+        // Only these 3 products
+        const ALLOWED = ['NUTRI 1075 M', 'NUTRI 1683 M', 'NUTRI 1684 M'];
 
-        // Group by Month (YYYY-MM) as a proxy for 'Evolution'
-        const grouped = {};
+        const all = this.applyFilters(
+            this.REGISTROS.filter(r =>
+                r.categoria === 'Fertilizacion' &&
+                ALLOWED.includes((r.producto || '').toUpperCase()) &&
+                (!fincaName || r.finca_original === fincaName) &&
+                (!productoFilter || (r.producto || '').toUpperCase() === productoFilter.toUpperCase())
+            ),
+            filters
+        );
+
+        // ── Fixed projection period: 09/09/2025 → 28/02/2026 ──
+        const projStart = new Date(2025, 8, 9);   // Sep 9, 2025
+        const projEnd = new Date(2026, 1, 28);  // Feb 28, 2026
+
+        // Helper: get Monday of the ISO week for a given date
+        const getMonday = (d) => {
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            return new Date(d.getFullYear(), d.getMonth(), diff);
+        };
+
+        // Helper: format a date as "DD/MM"
+        const fmtShort = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+        // Helper: parse dd/mm/yyyy date string
+        const parseDate = (str) => {
+            if (!str) return null;
+            const parts = str.split('/');
+            if (parts.length === 3) return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+            const parts2 = str.split('-');
+            if (parts2.length === 3) return new Date(parseInt(parts2[0]), parseInt(parts2[1]) - 1, parseInt(parts2[2]));
+            return null;
+        };
+
+        // ── 1. Generate all weeks in the projection range ──
+        const weeks = [];
+        const weekMap = {};
+        let cursor = getMonday(projStart);
+        let weekIdx = 0;
+        while (cursor <= projEnd) {
+            const weekEnd = new Date(cursor);
+            weekEnd.setDate(weekEnd.getDate() + 6);
+            const label = `S${weekIdx + 1} (${fmtShort(cursor)})`;
+            weeks.push({ start: new Date(cursor), end: weekEnd, label });
+            weekMap[weekIdx] = { real: 0 };
+            cursor.setDate(cursor.getDate() + 7);
+            weekIdx++;
+        }
+        const totalWeeks = weeks.length;
+
+        // ── 2. Calculate total budget → constant weekly fraction ──
+        let totalBudget = 0;
         all.forEach(r => {
-            if (!r.fecha_aplicacion) return;
-            const parts = r.fecha_aplicacion.split('/');
-            if (parts.length < 3) return;
-            // Format YYYY-MM
-            const key = `${parts[2]}-${parts[1].padStart(2, '0')}`;
-
-            if (!grouped[key]) grouped[key] = { pre: 0, real: 0 };
-
             const tipo = (r.tipo_registro || '').toLowerCase();
-            if (tipo.includes('presupuestado')) grouped[key].pre += r.cantidad;
-            else grouped[key].real += r.cantidad;
+            if (tipo.includes('presupuestado')) totalBudget += r.cantidad;
+        });
+        const weeklyBudget = totalWeeks > 0 ? Math.round((totalBudget / totalWeeks) * 100) / 100 : 0;
+
+        // ── 3. Assign real data to each week (NOT cumulative) ──
+        all.forEach(r => {
+            const tipo = (r.tipo_registro || '').toLowerCase();
+            if (tipo.includes('presupuestado')) return;
+
+            const fecha = parseDate(r.fecha_aplicacion);
+            if (!fecha) return;
+
+            for (let i = 0; i < weeks.length; i++) {
+                if (fecha >= weeks[i].start && fecha <= weeks[i].end) {
+                    weekMap[i].real += r.cantidad;
+                    break;
+                }
+            }
         });
 
-        const sortedKeys = Object.keys(grouped).sort();
+        // ── 4. Build per-week arrays (NOT cumulative) ──
+        const labels = [];
+        const pptado = [];
+        const real = [];
 
-        return {
-            labels: sortedKeys,
-            pptado: sortedKeys.map(k => grouped[k].pre),
-            real: sortedKeys.map(k => grouped[k].real)
-        };
+        for (let i = 0; i < totalWeeks; i++) {
+            labels.push(weeks[i].label);
+            pptado.push(weeklyBudget);  // constant line
+            real.push(Math.round(weekMap[i].real * 100) / 100);
+        }
+
+        return { labels, pptado, real };
     }
 
     static getProductosFertilizacion() {
@@ -392,20 +463,22 @@ export class SofiaImportModel {
             // Product filter (individual selection)
             if (filters.producto && prod !== filters.producto.toUpperCase()) return;
             if (r.cantidad > 0 && (r.n_units > 0 || r.p_units > 0 || r.k_units > 0)) {
-                if (!nutrientDensities[prod]) {
-                    nutrientDensities[prod] = { n: 0, p: 0, k: 0, totalQty: 0 };
-                }
-                nutrientDensities[prod].n += r.n_units;
-                nutrientDensities[prod].p += r.p_units;
-                nutrientDensities[prod].k += r.k_units;
-                nutrientDensities[prod].totalQty += r.cantidad;
-
                 const key = getGroupKey(r);
                 const uniqueKey = `${r.clasifica}-${r.cod_cuartel}-${r.producto}-${r.ciclo}-${tipo}`;
 
                 const cycleMatch = !filters.ciclo || r.ciclo === filters.ciclo || r.ciclo === 'Unknown';
                 const fincaMatch = !filters.finca || r.finca_original === filters.finca;
                 const predioMatch = !filters.predio || r.clasifica === filters.predio;
+
+                // Store per-group+product ratio for real calculations
+                const ratioKey = `${key}|${prod}`;
+                if (!nutrientDensities[ratioKey]) {
+                    nutrientDensities[ratioKey] = { n: 0, p: 0, k: 0, totalQty: 0 };
+                }
+                nutrientDensities[ratioKey].n += r.n_units;
+                nutrientDensities[ratioKey].p += r.p_units;
+                nutrientDensities[ratioKey].k += r.k_units;
+                nutrientDensities[ratioKey].totalQty += r.cantidad;
 
                 if (cycleMatch && fincaMatch && predioMatch) {
                     if (!processedBudgets.has(uniqueKey)) {
@@ -420,11 +493,11 @@ export class SofiaImportModel {
             }
         });
 
-        // ── Compute average nutrient ratios (units per liter) ──
-        const productRatios = {};
-        Object.entries(nutrientDensities).forEach(([prod, sums]) => {
+        // ── Compute nutrient ratios per group+product (units per liter) ──
+        const groupProductRatios = {};
+        Object.entries(nutrientDensities).forEach(([ratioKey, sums]) => {
             if (sums.totalQty > 0) {
-                productRatios[prod] = {
+                groupProductRatios[ratioKey] = {
                     n: sums.n / sums.totalQty,
                     p: sums.p / sums.totalQty,
                     k: sums.k / sums.totalQty
@@ -451,22 +524,28 @@ export class SofiaImportModel {
 
             let appliedN = 0, appliedP = 0, appliedK = 0;
 
-            if (productRatios[prod]) {
-                const ratios = productRatios[prod];
+            // Use group+product specific ratio first
+            const ratioKey = `${key}|${prod}`;
+            if (groupProductRatios[ratioKey]) {
+                const ratios = groupProductRatios[ratioKey];
                 appliedN = r.cantidad * ratios.n;
                 appliedP = r.cantidad * ratios.p;
                 appliedK = r.cantidad * ratios.k;
             } else {
-                let comp = compositions[prod];
-                if (!comp) {
-                    const foundKey = Object.keys(compositions).find(k => prod.includes(k));
-                    if (foundKey) comp = compositions[foundKey];
+                // Fallback: average ratio from other groups that have this product
+                const prodRatios = Object.entries(groupProductRatios)
+                    .filter(([k]) => k.endsWith(`|${prod}`))
+                    .map(([, v]) => v);
+
+                if (prodRatios.length > 0) {
+                    const avgN = prodRatios.reduce((s, r) => s + r.n, 0) / prodRatios.length;
+                    const avgP = prodRatios.reduce((s, r) => s + r.p, 0) / prodRatios.length;
+                    const avgK = prodRatios.reduce((s, r) => s + r.k, 0) / prodRatios.length;
+                    appliedN = r.cantidad * avgN;
+                    appliedP = r.cantidad * avgP;
+                    appliedK = r.cantidad * avgK;
                 }
-                if (comp) {
-                    appliedN = r.cantidad * (comp.n || 0);
-                    appliedP = r.cantidad * (comp.p || 0);
-                    appliedK = r.cantidad * (comp.k || 0);
-                }
+                // If no budget data at all, nutrients stay at 0 (don't use hardcoded compositions)
             }
 
             realStats[key].n += appliedN;

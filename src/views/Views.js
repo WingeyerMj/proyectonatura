@@ -1782,8 +1782,34 @@ export function renderFertilizacionComparativa(data) {
           <div class="chart-canvas-wrapper" style="height:450px;"><canvas id="chart-fert-comparativa"></canvas></div>
       </div>
       <div class="chart-container" style="min-height: 400px; padding: var(--space-6); grid-column: 1 / -1;">
-          <div class="chart-header"><span class="chart-title">Evolución Semanal: Presupuestado vs Real (L)</span></div>
-          <div class="chart-canvas-wrapper" style="height:350px;"><canvas id="chart-fert-weekly"></canvas></div>
+          <div class="chart-header" style="color: var(--color-primary-400); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3);">
+            <span class="chart-title">📈 🍇 El Espejo — Aplicación Semanal (L)</span>
+            <div style="display: flex; align-items: center; gap: var(--space-2);">
+              <label for="filter-weekly-producto-ee" style="font-family: 'Inter'; font-size: 12px; font-weight: 600; color: var(--text-tertiary);">Producto:</label>
+              <select id="filter-weekly-producto-ee" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 6px 12px; color: var(--text-primary); font-family: 'Inter'; font-size: 12px; font-weight: 500; cursor: pointer; min-width: 180px; outline: none;">
+                <option value="" style="color:#000;">Todos los productos</option>
+                <option value="NUTRI 1075 M" style="color:#000;">NUTRI 1075 M</option>
+                <option value="NUTRI 1683 M" style="color:#000;">NUTRI 1683 M</option>
+                <option value="NUTRI 1684 M" style="color:#000;">NUTRI 1684 M</option>
+              </select>
+            </div>
+          </div>
+          <div class="chart-canvas-wrapper" style="height:350px;"><canvas id="chart-fert-weekly-ee"></canvas></div>
+      </div>
+      <div class="chart-container" style="min-height: 400px; padding: var(--space-6); grid-column: 1 / -1;">
+          <div class="chart-header" style="color: var(--color-amber-400); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3);">
+            <span class="chart-title">📈 🌾 Fincas Viejas — Aplicación Semanal (L)</span>
+            <div style="display: flex; align-items: center; gap: var(--space-2);">
+              <label for="filter-weekly-producto-fv" style="font-family: 'Inter'; font-size: 12px; font-weight: 600; color: var(--text-tertiary);">Producto:</label>
+              <select id="filter-weekly-producto-fv" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 6px 12px; color: var(--text-primary); font-family: 'Inter'; font-size: 12px; font-weight: 500; cursor: pointer; min-width: 180px; outline: none;">
+                <option value="" style="color:#000;">Todos los productos</option>
+                <option value="NUTRI 1075 M" style="color:#000;">NUTRI 1075 M</option>
+                <option value="NUTRI 1683 M" style="color:#000;">NUTRI 1683 M</option>
+                <option value="NUTRI 1684 M" style="color:#000;">NUTRI 1684 M</option>
+              </select>
+            </div>
+          </div>
+          <div class="chart-canvas-wrapper" style="height:350px;"><canvas id="chart-fert-weekly-fv"></canvas></div>
       </div>
     </div>
 
