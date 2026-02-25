@@ -22,7 +22,7 @@ export class SofiaApiModel {
         const variedad = parts[2] && !parts[2].includes('Ha:') ? parts[2] : '';
 
         const haMatch = cuartelStr.match(/Ha:([\d.,]+)/);
-        const plMatch = cuartelStr.match(/Pl:(\d+)/);
+        const plMatch = cuartelStr.match(/Pl:([\d.,]+)/);
 
         let ha = 0;
         if (haMatch) {
@@ -31,7 +31,7 @@ export class SofiaApiModel {
 
         let pl = 0;
         if (plMatch) {
-            pl = parseInt(plMatch[1]) || 0;
+            pl = parseInt(plMatch[1].replace(/[.,]/g, '')) || 0;
         }
 
         return { code, ha, pl, predio, variedad };
@@ -217,8 +217,12 @@ export class SofiaApiModel {
             stats[lab].totalCosto += r.costo_ars;
 
             if (!stats[lab].cuarteles.has(r.cuartel)) {
-                stats[lab].totalHa += r.hectareas;
                 stats[lab].cuarteles.add(r.cuartel);
+                // Skip "Gral" cuarteles from El Espejo for hectares count
+                const isGralEspejo = r.finca === 'El Espejo' && r.cuartel && r.cuartel.toLowerCase().includes('gral');
+                if (!isGralEspejo) {
+                    stats[lab].totalHa += r.hectareas;
+                }
             }
         });
         return Object.values(stats).sort((a, b) => b.totalJornadas - a.totalJornadas);
@@ -282,11 +286,15 @@ export class SofiaApiModel {
             if (r.cuartel && !uniqueCuarteles.has(r.cuartel)) {
                 uniqueCuarteles.set(r.cuartel, { ha: r.hectareas, predio: predioName });
 
-                // Add to Aggregates
-                if (groupStats[groupName]) groupStats[groupName].area += r.hectareas;
+                // Skip "Gral" cuarteles from El Espejo for hectares count
+                const isGralEspejo = groupName === 'El Espejo' && r.cuartel.toLowerCase().includes('gral');
+                if (!isGralEspejo) {
+                    // Add to Aggregates
+                    if (groupStats[groupName]) groupStats[groupName].area += r.hectareas;
 
-                if (!predioStats[predioName]) predioStats[predioName] = { jornales: 0, area: 0, costoArs: 0, name: predioName, group: groupName };
-                predioStats[predioName].area += r.hectareas;
+                    if (!predioStats[predioName]) predioStats[predioName] = { jornales: 0, area: 0, costoArs: 0, name: predioName, group: groupName };
+                    predioStats[predioName].area += r.hectareas;
+                }
             }
 
             // 3. Sum Jornales and Cost (Numerator)
@@ -311,6 +319,71 @@ export class SofiaApiModel {
         return {
             groups: Object.values(groupStats).map(compute),
             predios: Object.values(predioStats).map(compute).sort((a, b) => b.efficiency - a.efficiency)
+        };
+    }
+
+    /**
+     * Extracts Hectares per Predio (Clasificación) grouped by Finca.
+     * Uses unique cuarteles to avoid double-counting area.
+     * Returns: { groups: [ { name, predios: [{ name, hectareas, cuarteles, plantas }], totalHa, totalCuarteles, totalPlantas } ], grandTotalHa, grandTotalCuarteles, grandTotalPlantas }
+     */
+    static getHectareasPorPredio(data) {
+        const PREDIO_CONFIG = [
+            { keyword: 'Camino Truncado', group: 'Fincas Viejas', name: 'Camino Truncado' },
+            { keyword: 'La Chimbera', group: 'Fincas Viejas', name: 'La Chimbera' },
+            { keyword: 'Puente Alto', group: 'Fincas Viejas', name: 'Puente Alto' },
+            { keyword: 'EEIII', group: 'El Espejo', name: 'El Espejo 3' },
+            { keyword: 'EEII', group: 'El Espejo', name: 'El Espejo 2' },
+            { keyword: 'EEI', group: 'El Espejo', name: 'El Espejo 1' }
+        ];
+
+        const uniqueCuarteles = new Set();
+        const predioMap = {};  // predioName -> { ha, cuarteles, plantas, group }
+
+        data.forEach(r => {
+            const rawPredio = r.clasifica || '';
+            const config = PREDIO_CONFIG.find(c => rawPredio.includes(c.keyword));
+            if (!config) return;
+
+            if (r.cuartel && !uniqueCuarteles.has(r.cuartel)) {
+                uniqueCuarteles.add(r.cuartel);
+
+                // Skip "Gral" (General) cuarteles for El Espejo — they are overhead, not physical area
+                const cuartelLower = r.cuartel.toLowerCase();
+                if (config.group === 'El Espejo' && cuartelLower.includes('gral')) return;
+
+                const info = this.parseCuartelInfo(r.cuartel);
+
+                if (!predioMap[config.name]) {
+                    predioMap[config.name] = { name: config.name, group: config.group, hectareas: 0, cuarteles: 0, plantas: 0 };
+                }
+                predioMap[config.name].hectareas += r.hectareas || info.ha;
+                predioMap[config.name].cuarteles += 1;
+                predioMap[config.name].plantas += info.pl;
+            }
+        });
+
+        // Group by finca
+        const groupOrder = ['El Espejo', 'Fincas Viejas'];
+        const groups = groupOrder.map(groupName => {
+            const predios = Object.values(predioMap)
+                .filter(p => p.group === groupName)
+                .sort((a, b) => b.hectareas - a.hectareas);
+
+            return {
+                name: groupName,
+                predios,
+                totalHa: predios.reduce((s, p) => s + p.hectareas, 0),
+                totalCuarteles: predios.reduce((s, p) => s + p.cuarteles, 0),
+                totalPlantas: predios.reduce((s, p) => s + p.plantas, 0)
+            };
+        });
+
+        return {
+            groups,
+            grandTotalHa: groups.reduce((s, g) => s + g.totalHa, 0),
+            grandTotalCuarteles: groups.reduce((s, g) => s + g.totalCuarteles, 0),
+            grandTotalPlantas: groups.reduce((s, g) => s + g.totalPlantas, 0)
         };
     }
 
@@ -341,8 +414,12 @@ export class SofiaApiModel {
             // Cuarteles
             if (!cuarteles[r.cuartel]) {
                 cuarteles[r.cuartel] = 0;
-                const info = this.parseCuartelInfo(r.cuartel);
-                totalHa += info.ha;
+                // Skip "Gral" cuarteles from El Espejo for hectares count
+                const isGralEspejo = r.finca === 'El Espejo' && r.cuartel && r.cuartel.toLowerCase().includes('gral');
+                if (!isGralEspejo) {
+                    const info = this.parseCuartelInfo(r.cuartel);
+                    totalHa += info.ha;
+                }
             }
             cuarteles[r.cuartel] += kilos;
 
@@ -380,6 +457,95 @@ export class SofiaApiModel {
             cuarteles: sortObj(cuarteles),
             variedades: sortObj(variedades),
             origen
+        };
+    }
+
+    /**
+     * Gets Cosecha KG (fresh grape) and Levantado (raisin) stats per predio, by pass number (1-5).
+     * Requires full cycle data (not just cosecha-filtered data).
+     * Returns: { predios: [ { name, group, cosecha: [kg1..kg5], levantado: [kg1..kg5], totalCosecha, totalLevantado } ] }
+     */
+    static getCosechaLevantadoStats(fullCycleData) {
+        const PREDIO_CONFIG = [
+            { keyword: 'Camino Truncado', group: 'Fincas Viejas', name: 'Camino Truncado' },
+            { keyword: 'La Chimbera', group: 'Fincas Viejas', name: 'La Chimbera' },
+            { keyword: 'Puente Alto', group: 'Fincas Viejas', name: 'Puente Alto' },
+            { keyword: 'EEIII', group: 'El Espejo', name: 'El Espejo 3' },
+            { keyword: 'EEII', group: 'El Espejo', name: 'El Espejo 2' },
+            { keyword: 'EEI', group: 'El Espejo', name: 'El Espejo 1' }
+        ];
+
+        const predioMap = {};
+
+        fullCycleData.forEach(r => {
+            const labor = (r.labor || '').toLowerCase().trim();
+            const rawPredio = r.clasifica || '';
+            const config = PREDIO_CONFIG.find(c => rawPredio.includes(c.keyword));
+            if (!config) return;
+
+            // Detect labor type and pass number
+            let type = null;
+            let passNum = 0;
+
+            if (labor.includes('cosecha kg')) {
+                type = 'cosecha';
+                // Extract pass number: "cosecha kg 1", "cosecha kg 2", etc.
+                const match = labor.match(/cosecha\s*kg\s*(\d+)/i);
+                passNum = match ? parseInt(match[1]) : 1;
+            } else if (labor.includes('levantado')) {
+                type = 'levantado';
+                // Extract pass number: "levantado 1", "levantado 2", etc.
+                const match = labor.match(/levantado\s*(\d+)/i);
+                passNum = match ? parseInt(match[1]) : 1;
+            }
+
+            if (!type || passNum < 1 || passNum > 5) return;
+
+            const kg = r.rendimiento_val || 0;
+            const predioName = config.name;
+
+            if (!predioMap[predioName]) {
+                predioMap[predioName] = {
+                    name: predioName,
+                    group: config.group,
+                    cosecha: [0, 0, 0, 0, 0],   // pass 1-5
+                    levantado: [0, 0, 0, 0, 0],  // pass 1-5
+                    totalCosecha: 0,
+                    totalLevantado: 0
+                };
+            }
+
+            const idx = passNum - 1; // 0-indexed
+            if (type === 'cosecha') {
+                predioMap[predioName].cosecha[idx] += kg;
+                predioMap[predioName].totalCosecha += kg;
+            } else {
+                predioMap[predioName].levantado[idx] += kg;
+                predioMap[predioName].totalLevantado += kg;
+            }
+        });
+
+        // Group by finca
+        const groupOrder = ['El Espejo', 'Fincas Viejas'];
+        const groups = groupOrder.map(groupName => {
+            const predios = Object.values(predioMap)
+                .filter(p => p.group === groupName)
+                .sort((a, b) => a.name.localeCompare(b.name));
+
+            return {
+                name: groupName,
+                predios,
+                totalCosecha: predios.reduce((s, p) => s + p.totalCosecha, 0),
+                totalLevantado: predios.reduce((s, p) => s + p.totalLevantado, 0),
+                cosechaPasses: [0, 1, 2, 3, 4].map(i => predios.reduce((s, p) => s + p.cosecha[i], 0)),
+                levantadoPasses: [0, 1, 2, 3, 4].map(i => predios.reduce((s, p) => s + p.levantado[i], 0))
+            };
+        });
+
+        return {
+            groups,
+            grandTotalCosecha: groups.reduce((s, g) => s + g.totalCosecha, 0),
+            grandTotalLevantado: groups.reduce((s, g) => s + g.totalLevantado, 0)
         };
     }
 
@@ -534,8 +700,10 @@ export class SofiaApiModel {
 
             filtered.forEach(r => {
                 if (r.cuartel && !uniqueCuarteles.has(r.cuartel)) {
-                    // Only count if Ha is > 0
-                    if (r.hectares > 0) {
+                    // Skip "Gral" cuarteles from El Espejo for hectares count
+                    const isGralEspejo = r.finca === 'El Espejo' && r.cuartel.toLowerCase().includes('gral');
+                    // Only count if Ha is > 0 and not a Gral cuartel
+                    if (r.hectares > 0 && !isGralEspejo) {
                         uniqueCuarteles.set(r.cuartel, r.hectares);
                         totalHa += r.hectares;
                     }
