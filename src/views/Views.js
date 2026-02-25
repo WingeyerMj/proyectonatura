@@ -10,7 +10,7 @@ export function renderLandingPage() {
   return `
     <nav class="landing-nav" id="landing-nav">
       <div class="nav-logo">
-        <div class="nav-logo-icon">🍇</div>
+        <img src="/logo.svg" alt="NaturalFood" class="nf-logo">
         <span class="nav-logo-text">NATURALFOOD</span>
       </div>
       <div class="nav-links">
@@ -151,7 +151,7 @@ export function renderLoginPage() {
     <div class="login-page">
       <div class="login-card">
         <div class="login-header">
-          <div class="login-logo">🍇</div>
+          <img src="/logo.svg" alt="NaturalFood" class="nf-logo nf-logo--lg">
           <h2>Bienvenido</h2>
           <p>Ingresa tus credenciales para acceder al sistema</p>
         </div>
@@ -232,7 +232,7 @@ export function renderDashboardLayout(user, menuItems, activeSection) {
     <div class="dashboard-layout">
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
-          <div class="sidebar-logo">🍇</div>
+          <img src="/logo.svg" alt="NaturalFood" class="nf-logo">
           <span class="sidebar-title">NATURALFOOD</span>
         </div>
         
@@ -979,17 +979,7 @@ export function renderSofiaJornalesStats(laborStats, efficiencyStats, currentCyc
         </p>
     </div>
 
-    <!-- Efficiency Historical Chart -->
-    <div class="section-divider" style="margin: var(--space-8) 0; height: 1px; background: var(--border-subtle);"></div>
-    <h3 style="font-family: 'Outfit'; color: var(--text-primary); margin-bottom: var(--space-6);">📅 Eficiencia de Jornales por Hectárea</h3>
-    <div class="data-table-container animate-fade-in animate-delay-2" style="padding: var(--space-6);">
-        <div style="height: 300px; position: relative;">
-            <canvas id="chart-jornales-eficiencia-historico"></canvas>
-        </div>
-        <p style="text-align: center; color: var(--text-tertiary); font-size: 0.9em; margin-top: var(--space-4);">
-            Evolución de Intensidad Laboral (Jornales/Ha) por mes entre ciclos productivos.
-        </p>
-    </div>
+
 
     <div class="data-table-container animate-fade-in animate-delay-3">
       <div class="table-header" style="justify-content: space-between;">
@@ -1027,6 +1017,132 @@ export function renderSofiaJornalesStats(laborStats, efficiencyStats, currentCyc
           </tr>
         </tfoot>
       </table>
+    </div>
+  `;
+}
+
+export function renderHectareasPorPredio(hectareasData) {
+  const fmtDec = (v) => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 }).format(v);
+  const fmtNum = (v) => new Intl.NumberFormat('es-AR').format(v);
+
+  const groupColors = {
+    'El Espejo': { accent: 'var(--color-accent-500)', bg: 'rgba(168, 85, 247, 0.1)', gradient: 'linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(168, 85, 247, 0.05))' },
+    'Fincas Viejas': { accent: 'var(--color-primary-500)', bg: 'rgba(59, 130, 246, 0.1)', gradient: 'linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(59, 130, 246, 0.05))' }
+  };
+
+  return `
+    <div class="section-divider" style="margin: var(--space-8) 0; height: 1px; background: var(--border-subtle);"></div>
+    <h3 style="font-family: 'Outfit'; color: var(--text-primary); margin-bottom: var(--space-6); display: flex; align-items: center; gap: var(--space-3);">
+      🗺️ Superficie por Predio (Clasificación)
+    </h3>
+
+    <!-- Summary Cards -->
+    <div class="dashboard-grid animate-fade-in" style="margin-bottom: var(--space-6); grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+      <div class="metric-card" style="padding: var(--space-5);">
+        <div class="metric-card-header"><div class="metric-card-icon green">🌿</div></div>
+        <div class="metric-value" style="font-size: 2em;">${fmtDec(hectareasData.grandTotalHa)} <small style="font-size: 0.4em; color: var(--text-tertiary);">Ha</small></div>
+        <div class="metric-label">Superficie Total</div>
+      </div>
+      <div class="metric-card" style="padding: var(--space-5);">
+        <div class="metric-card-header"><div class="metric-card-icon blue">📐</div></div>
+        <div class="metric-value" style="font-size: 2em;">${fmtNum(hectareasData.grandTotalCuarteles)}</div>
+        <div class="metric-label">Cuarteles</div>
+      </div>
+      <div class="metric-card" style="padding: var(--space-5);">
+        <div class="metric-card-header"><div class="metric-card-icon purple">🌱</div></div>
+        <div class="metric-value" style="font-size: 2em;">${fmtNum(hectareasData.grandTotalPlantas)}</div>
+        <div class="metric-label">Plantas Totales</div>
+      </div>
+    </div>
+
+    <!-- Detail Table per Finca Group -->
+    <div class="dashboard-grid animate-fade-in animate-delay-1" style="grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: var(--space-6);">
+      ${hectareasData.groups.map(g => {
+    const colors = groupColors[g.name] || groupColors['El Espejo'];
+    return `
+        <div class="data-table-container" style="padding: var(--space-6); border-left: 4px solid ${colors.accent};">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-5);">
+            <h4 style="font-family: 'Outfit'; color: var(--text-primary); display: flex; align-items: center; gap: var(--space-2);">
+              ${g.name === 'El Espejo' ? '🏔️' : '🏡'} ${g.name}
+            </h4>
+            <div style="background: ${colors.bg}; color: ${colors.accent}; padding: 4px 12px; border-radius: 12px; font-size: 0.8em; font-weight: 600;">
+              ${fmtDec(g.totalHa)} Ha
+            </div>
+          </div>
+          <table class="data-table" style="margin: 0;">
+            <thead>
+              <tr>
+                <th>Predio</th>
+                <th style="text-align: center;">Cuarteles</th>
+                <th style="text-align: right;">Hectáreas</th>
+                <th style="text-align: right;">Plantas</th>
+                <th style="text-align: center; min-width: 100px;">% Superficie</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${g.predios.map(p => {
+      const pct = g.totalHa > 0 ? (p.hectareas / g.totalHa * 100) : 0;
+      return `
+                <tr>
+                  <td><strong>${p.name}</strong></td>
+                  <td style="text-align: center;">${fmtNum(p.cuarteles)}</td>
+                  <td style="text-align: right; color: ${colors.accent}; font-weight: 600;">${fmtDec(p.hectareas)}</td>
+                  <td style="text-align: right;">${fmtNum(p.plantas)}</td>
+                  <td style="text-align: center;">
+                    <div style="display: flex; align-items: center; gap: var(--space-2); justify-content: center;">
+                      <div style="flex: 1; height: 6px; background: var(--bg-glass); border-radius: var(--radius-full); overflow: hidden; max-width: 80px;">
+                        <div style="height: 100%; width: ${pct}%; background: ${colors.accent}; border-radius: var(--radius-full); transition: width 0.6s ease;"></div>
+                      </div>
+                      <span style="font-size: 0.8em; color: var(--text-tertiary); min-width: 36px;">${fmtDec(pct)}%</span>
+                    </div>
+                  </td>
+                </tr>
+                `;
+    }).join('')}
+            </tbody>
+            <tfoot style="background: ${colors.bg}; font-weight: 700;">
+              <tr>
+                <td>Subtotal</td>
+                <td style="text-align: center;">${fmtNum(g.totalCuarteles)}</td>
+      <td style="text-align: right; color: ${colors.accent};">${fmtDec(g.totalHa)}</td>
+                <td style="text-align: right;">${fmtNum(g.totalPlantas)}</td>
+                <td style="text-align: center; font-size: 0.85em;">100%</td>
+              </tr>
+            </tfoot>
+           </table>
+        </div>
+        `;
+  }).join('')}
+    </div>
+  `;
+}
+
+export function renderEficienciaChartSection(hectareasData) {
+  // Build list of all predios for the filter
+  const allPredios = hectareasData.groups.flatMap(g => g.predios.map(p => p.name));
+
+  return `
+    <div class="section-divider" style="margin: var(--space-8) 0; height: 1px; background: var(--border-subtle);"></div>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-6); flex-wrap: wrap; gap: var(--space-4);">
+      <h3 style="font-family: 'Outfit'; color: var(--text-primary); display: flex; align-items: center; gap: var(--space-3); margin: 0;">
+        📊 Eficiencia de Jornales por Hectárea
+      </h3>
+      <div style="display: flex; align-items: center; gap: var(--space-3);">
+        <label class="form-label" style="margin: 0; white-space: nowrap; font-size: 0.85em;">Clasificación:</label>
+        <select class="form-select sofia-filter-select" id="filter-eficiencia-clasificacion" style="min-width: 180px; padding: 6px 12px; font-size: 0.85em;">
+          <option value="">Todas</option>
+          ${allPredios.map(p => `<option value="${p}">${p}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="data-table-container animate-fade-in" style="padding: var(--space-6);">
+        <div style="height: 320px; position: relative;">
+            <canvas id="chart-jornales-eficiencia-historico"></canvas>
+        </div>
+        <p style="text-align: center; color: var(--text-tertiary); font-size: 0.9em; margin-top: var(--space-4);">
+            Evolución de Intensidad Laboral (Jornales/Ha) por mes entre ciclos productivos.
+            <span id="eficiencia-filter-label" style="font-weight: 600; color: var(--color-accent-400);"></span>
+        </p>
     </div>
   `;
 }
@@ -1423,6 +1539,129 @@ export function renderCosechaDashboard(stats) {
     `;
 }
 
+export function renderCosechaLevantadoTable(clStats) {
+  const fmt = (v) => new Intl.NumberFormat('es-AR').format(Math.round(v));
+  const passes = [1, 2, 3, 4, 5];
+  const groupColors = {
+    'El Espejo': { accent: 'var(--color-accent-500)', bg: 'rgba(168, 85, 247, 0.08)' },
+    'Fincas Viejas': { accent: 'var(--color-primary-500)', bg: 'rgba(59, 130, 246, 0.08)' }
+  };
+  const globalFactor = clStats.grandTotalCosecha > 0 ? (clStats.grandTotalLevantado / clStats.grandTotalCosecha) : 0;
+
+  return `
+    <div class="section-divider" style="margin: var(--space-8) 0; height: 1px; background: var(--border-subtle);"></div>
+    <h3 style="font-family: 'Outfit'; color: var(--text-primary); margin-bottom: var(--space-4); display: flex; align-items: center; gap: var(--space-3);">
+      🍇 Cosecha en Fresco vs. Levantado de Pasa
+    </h3>
+    <p style="color: var(--text-tertiary); font-size: 0.85em; margin-bottom: var(--space-6);">
+      Comparación de kilogramos cosechados en fresco (<strong>Cosecha KG</strong>) y kilogramos de pasa levantada de secadero (<strong>Levantado</strong>) por pasada (1-5), agrupado por clasificación.
+      El <strong>factor de reducción</strong> indica la proporción de pasa obtenida respecto al peso en fresco.
+    </p>
+
+    <div class="dashboard-grid animate-fade-in" style="margin-bottom: var(--space-6); grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+      <div class="metric-card" style="padding: var(--space-5); border-left: 4px solid var(--color-primary-500);">
+        <div class="metric-card-header"><div class="metric-card-icon green">🍇</div></div>
+        <div class="metric-value" style="font-size: 1.8em;">${fmt(clStats.grandTotalCosecha)} <small style="font-size: 0.35em; color: var(--text-tertiary);">kg</small></div>
+        <div class="metric-label">Total Cosecha en Fresco</div>
+      </div>
+      <div class="metric-card" style="padding: var(--space-5); border-left: 4px solid var(--color-accent-500);">
+        <div class="metric-card-header"><div class="metric-card-icon purple">🫘</div></div>
+        <div class="metric-value" style="font-size: 1.8em;">${fmt(clStats.grandTotalLevantado)} <small style="font-size: 0.35em; color: var(--text-tertiary);">kg</small></div>
+        <div class="metric-label">Total Levantado (Pasa)</div>
+      </div>
+      <div class="metric-card" style="padding: var(--space-5); border-left: 4px solid #f59e0b;">
+        <div class="metric-card-header"><div class="metric-card-icon amber">⚖️</div></div>
+        <div class="metric-value" style="font-size: 1.8em;">${globalFactor.toFixed(2)}</div>
+        <div class="metric-label">Factor de Reducción Global</div>
+        <p style="font-size: var(--text-xs); color: var(--text-tertiary); margin-top: var(--space-1);">${(globalFactor * 100).toFixed(1)}% del peso fresco</p>
+      </div>
+    </div>
+
+    ${clStats.groups.map(g => {
+    const colors = groupColors[g.name] || groupColors['El Espejo'];
+    if (g.predios.length === 0) return '';
+    const gFactor = g.totalCosecha > 0 ? (g.totalLevantado / g.totalCosecha) : 0;
+    return `
+      <div class="data-table-container animate-fade-in animate-delay-1" style="padding: var(--space-6); border-left: 4px solid ${colors.accent}; margin-bottom: var(--space-6);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-5); flex-wrap: wrap; gap: var(--space-3);">
+          <h4 style="font-family: 'Outfit'; color: var(--text-primary); display: flex; align-items: center; gap: var(--space-2); margin: 0;">
+            ${g.name === 'El Espejo' ? '🏔️' : '🏡'} ${g.name}
+          </h4>
+          <div style="display: flex; gap: var(--space-3); flex-wrap: wrap;">
+            <div style="background: rgba(16, 185, 129, 0.1); color: #10b981; padding: 4px 12px; border-radius: 12px; font-size: 0.8em; font-weight: 600;">🍇 ${fmt(g.totalCosecha)} kg</div>
+            <div style="background: rgba(168, 85, 247, 0.1); color: var(--color-accent-400); padding: 4px 12px; border-radius: 12px; font-size: 0.8em; font-weight: 600;">🫘 ${fmt(g.totalLevantado)} kg</div>
+            <div style="background: rgba(245, 158, 11, 0.1); color: #f59e0b; padding: 4px 12px; border-radius: 12px; font-size: 0.8em; font-weight: 600;">⚖️ Factor: ${gFactor.toFixed(2)}</div>
+          </div>
+        </div>
+        <div style="overflow-x: auto;">
+          <table class="data-table" style="margin: 0; min-width: 850px;">
+            <thead>
+              <tr>
+                <th style="vertical-align: middle; min-width: 120px;">Predio</th>
+                <th style="vertical-align: middle; min-width: 70px;">Tipo</th>
+                ${passes.map(n => '<th style="text-align: right; font-size: 0.85em;">' + n + '° Pasada</th>').join('')}
+                <th style="text-align: right;">Total</th>
+                <th style="text-align: center; min-width: 80px; background: rgba(245, 158, 11, 0.06);">Factor</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${g.predios.map(p => {
+      const pFactor = p.totalCosecha > 0 ? (p.totalLevantado / p.totalCosecha) : 0;
+      return '<tr style="border-bottom: none;">' +
+        '<td rowspan="3" style="vertical-align: middle; border-bottom: 2px solid var(--border-subtle);"><strong>' + p.name + '</strong></td>' +
+        '<td style="font-size: 0.8em; color: #10b981; font-weight: 600;">🍇 Fresco</td>' +
+        p.cosecha.map(v => '<td style="text-align: right; ' + (v > 0 ? 'color: #10b981; font-weight: 600;' : 'color: var(--text-tertiary); opacity: 0.5;') + '">' + (v > 0 ? fmt(v) : '—') + '</td>').join('') +
+        '<td style="text-align: right; font-weight: 700; color: #059669;">' + fmt(p.totalCosecha) + '</td>' +
+        '<td rowspan="3" style="text-align: center; vertical-align: middle; font-size: 1.3em; font-weight: 800; color: #f59e0b; background: rgba(245, 158, 11, 0.06); border-bottom: 2px solid var(--border-subtle);">' + pFactor.toFixed(2) + '<div style="font-size: 0.5em; font-weight: 400; color: var(--text-tertiary);">' + (pFactor * 100).toFixed(1) + '%</div></td>' +
+        '</tr>' +
+        '<tr style="border-bottom: none;">' +
+        '<td style="font-size: 0.8em; color: var(--color-accent-400); font-weight: 600;">🫘 Pasa</td>' +
+        p.levantado.map(v => '<td style="text-align: right; ' + (v > 0 ? 'color: var(--color-accent-400); font-weight: 600;' : 'color: var(--text-tertiary); opacity: 0.5;') + '">' + (v > 0 ? fmt(v) : '—') + '</td>').join('') +
+        '<td style="text-align: right; font-weight: 700; color: var(--color-accent-500);">' + fmt(p.totalLevantado) + '</td>' +
+        '</tr>' +
+        '<tr style="border-bottom: 2px solid var(--border-subtle);">' +
+        '<td style="font-size: 0.8em; color: #f59e0b; font-weight: 600;">⚖️ Factor</td>' +
+        p.cosecha.map((c, i) => {
+          const l = p.levantado[i];
+          const f = c > 0 ? (l / c) : 0;
+          const hasData = c > 0 && l > 0;
+          return '<td style="text-align: right; ' + (hasData ? 'color: #f59e0b; font-weight: 700;' : 'color: var(--text-tertiary); opacity: 0.5;') + '">' + (hasData ? f.toFixed(2) : '—') + '</td>';
+        }).join('') +
+        '<td style="text-align: right; font-weight: 700; color: #f59e0b;">' + (pFactor > 0 ? pFactor.toFixed(2) : '—') + '</td>' +
+        '</tr>';
+    }).join('')}
+            </tbody>
+            <tfoot style="background: ${colors.bg}; font-weight: 700;">
+              <tr style="border-bottom: none;">
+                <td rowspan="3" style="vertical-align: middle;">Subtotal</td>
+                <td style="font-size: 0.8em;">🍇</td>
+                ${g.cosechaPasses.map(v => '<td style="text-align: right; color: #10b981;">' + (v > 0 ? fmt(v) : '—') + '</td>').join('')}
+                <td style="text-align: right; color: #059669;">${fmt(g.totalCosecha)}</td>
+                <td rowspan="3" style="text-align: center; vertical-align: middle; font-size: 1.3em; font-weight: 800; color: #f59e0b;">${gFactor.toFixed(2)}</td>
+              </tr>
+              <tr style="border-bottom: none;">
+                <td style="font-size: 0.8em;">🫘</td>
+                ${g.levantadoPasses.map(v => '<td style="text-align: right; color: var(--color-accent-500);">' + (v > 0 ? fmt(v) : '—') + '</td>').join('')}
+                <td style="text-align: right; color: var(--color-accent-600);">${fmt(g.totalLevantado)}</td>
+              </tr>
+              <tr>
+                <td style="font-size: 0.8em;">⚖️</td>
+                ${g.cosechaPasses.map((c, i) => {
+      const l = g.levantadoPasses[i];
+      const f = c > 0 ? (l / c) : 0;
+      return '<td style="text-align: right; color: #f59e0b;">' + (c > 0 && l > 0 ? f.toFixed(2) : '—') + '</td>';
+    }).join('')}
+                <td style="text-align: right; color: #f59e0b;">${gFactor > 0 ? gFactor.toFixed(2) : '—'}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>`;
+  }).join('')}
+  `;
+}
+
+
 // ── Utility Functions ──
 function formatDate(dateStr) {
   const date = new Date(dateStr + 'T00:00:00');
@@ -1440,7 +1679,7 @@ export function formatCurrency(amount) {
 export function renderInformeAplicaciones(cycles, fincas, predios, cuarteles, userRole, filters) {
   const canUpload = userRole === 'Administrador' || userRole === 'Ingeniero';
   return `
-    <div id="sofia-module-container">
+  <div id="sofia-module-container">
     <div class="section-header animate-fade-in" style="margin-bottom: var(--space-4);">
         <h2 style="font-family: 'Outfit'; color: var(--text-primary);">🧪 Informe de Aplicaciones</h2>
     </div>
@@ -1483,7 +1722,7 @@ export function renderInformeAplicaciones(cycles, fincas, predios, cuarteles, us
     </div>
 
     <div id="sofia-subtab-content" class="animate-fade-in animate-delay-3"></div>
-    </div>
+    </div >
   `;
 }
 
@@ -1492,7 +1731,7 @@ export function renderSofiaResumen(resumen) {
   const fincas = Object.entries(resumen.fincaBreakdown || {});
 
   return `
-    <!-- Global Totals Section -->
+  <!--Global Totals Section-->
 
     <div class="section-divider"> Consolidado Global </div>
     <div class="dashboard-grid" style="margin-bottom: var(--space-8);">
@@ -1562,12 +1801,12 @@ export function renderSofiaResumen(resumen) {
             </tbody>
         </table>
     </div>
-  `;
+`;
 }
 
 export function renderSofiaFoliares(data) {
   return `
-    <div class="data-table-container">
+  <div class="data-table-container">
       <div class="table-header">
         <h3>🧴 Aplicaciones Foliares (AF) — <span style="color:var(--text-tertiary)">Gasto Operativo Curativo</span></h3>
         <div class="table-actions">
@@ -1614,12 +1853,12 @@ export function renderSofiaFoliares(data) {
       })()}
         </tbody>
       </table>
-    </div>`;
+    </div > `;
 }
 
 export function renderSofiaHerbicidas(data) {
   return `
-    <div class="data-table-container">
+  <div class="data-table-container">
       <div class="table-header">
         <h3>🌿 Herbicidas — <span style="color:var(--text-tertiary)">Gasto Operativo Mantenimiento</span></h3>
         <div class="table-actions">
@@ -1666,7 +1905,7 @@ export function renderSofiaHerbicidas(data) {
       })()}
         </tbody>
       </table>
-    </div>`;
+    </div > `;
 }
 
 export function renderFertilizacionComparativa(data) {
@@ -1676,7 +1915,7 @@ export function renderFertilizacionComparativa(data) {
   const totalPct = totalMeta > 0 ? Math.round((totalDesvio / totalMeta) * 100) : 0;
 
   return `
-    <div class="dashboard-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+  <div class="dashboard-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
       <div class="metric-card">
         <div class="metric-card-header"><div class="metric-card-icon green">🎯</div></div>
         <div class="metric-value">${formatCurrency(totalMeta)} L</div>
@@ -1694,7 +1933,7 @@ export function renderFertilizacionComparativa(data) {
       </div>
     </div>
 
-    <!-- Charts -->
+    <!--Charts -->
     <div style="display: flex; flex-direction: column; gap: var(--space-6); margin-bottom: var(--space-8);">
       <div class="chart-container" style="min-height: 500px; padding: var(--space-6);">
           <div class="chart-header" style="color:var(--color-primary-400)"><span class="chart-title">🍇 El Espejo: Comprado vs Real por Producto</span></div>
@@ -1777,10 +2016,7 @@ export function renderFertilizacionComparativa(data) {
             <div class="chart-canvas-wrapper" style="height:320px;"><canvas id="chart-fert-unidades-k-fv"></canvas></div>
         </div>
       </div>
-      <div class="chart-container" style="min-height: 500px; padding: var(--space-6);">
-          <div class="chart-header"><span class="chart-title">Detalle Comparativo por Clasificación (L)</span></div>
-          <div class="chart-canvas-wrapper" style="height:450px;"><canvas id="chart-fert-comparativa"></canvas></div>
-      </div>
+
       <div class="chart-container" style="min-height: 400px; padding: var(--space-6); grid-column: 1 / -1;">
           <div class="chart-header" style="color: var(--color-primary-400); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3);">
             <span class="chart-title">📈 🍇 El Espejo — Aplicación Semanal (L)</span>
@@ -1813,18 +2049,18 @@ export function renderFertilizacionComparativa(data) {
       </div>
     </div>
 
-    <!-- Detail Table grouped by Finca -->
-    <div class="data-table-container">
-      <div class="table-header">
-        <h3>🧪 Detalle por Finca y Cuartel</h3>
-      </div>
-      <table class="data-table">
-        <thead><tr>
-          <th>Predio / Cuartel</th><th>Producto</th><th>Pre-Cos. (L)</th><th>Pos-Cos. (L)</th>
-          <th>Comprado (L)</th><th>Real (L)</th><th>Desvío</th><th>%</th>
-        </tr></thead>
-        <tbody>
-          ${data.length === 0 ? '<tr><td colspan="8" style="text-align:center;color:var(--text-tertiary);padding:var(--space-8);">Sin registros</td></tr>' :
+    <!--Detail Table grouped by Finca-->
+  <div class="data-table-container">
+    <div class="table-header">
+      <h3>🧪 Detalle por Finca y Cuartel</h3>
+    </div>
+    <table class="data-table">
+      <thead><tr>
+        <th>Predio / Cuartel</th><th>Producto</th><th>Pre-Cos. (L)</th><th>Pos-Cos. (L)</th>
+        <th>Comprado (L)</th><th>Real (L)</th><th>Desvío</th><th>%</th>
+      </tr></thead>
+      <tbody>
+        ${data.length === 0 ? '<tr><td colspan="8" style="text-align:center;color:var(--text-tertiary);padding:var(--space-8);">Sin registros</td></tr>' :
       (() => {
         const grouped = data.reduce((acc, r) => {
           const key = r.finca_original || r.finca || 'Otros';
@@ -1856,9 +2092,9 @@ export function renderFertilizacionComparativa(data) {
           `).join('')}
         `).join('');
       })()}
-        </tbody>
-      </table>
-    </div>
-  `;
+      </tbody>
+    </table>
+  </div>
+`;
 }
 

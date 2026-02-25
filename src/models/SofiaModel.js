@@ -295,12 +295,14 @@ export class SofiaImportModel {
             else groups[key].real += r.cantidad;
         });
 
-        return Object.values(groups).map(g => ({
-            ...g,
-            metaAnual: g.pre + g.pos,
-            desvio: g.real - (g.pre + g.pos),
-            desvioPct: (g.pre + g.pos) > 0 ? Math.round(((g.real - (g.pre + g.pos)) / (g.pre + g.pos)) * 100) : 0,
-        }));
+        return Object.values(groups)
+            .filter(g => (g.pre + g.pos) > 0)
+            .map(g => ({
+                ...g,
+                metaAnual: g.pre + g.pos,
+                desvio: g.real - (g.pre + g.pos),
+                desvioPct: (g.pre + g.pos) > 0 ? Math.round(((g.real - (g.pre + g.pos)) / (g.pre + g.pos)) * 100) : 0,
+            }));
     }
 
     static getProductComparison(filters = {}) {
@@ -313,11 +315,13 @@ export class SofiaImportModel {
             if (tipo.includes('presupuestado')) groups[key].pre += r.cantidad;
             else if (tipo === 'real') groups[key].real += r.cantidad;
         });
-        return Object.values(groups).sort((a, b) => {
-            const clasDiff = a.clasifica.localeCompare(b.clasifica);
-            if (clasDiff !== 0) return clasDiff;
-            return a.producto.localeCompare(b.producto);
-        });
+        return Object.values(groups)
+            .filter(g => g.pre > 0)
+            .sort((a, b) => {
+                const clasDiff = a.clasifica.localeCompare(b.clasifica);
+                if (clasDiff !== 0) return clasDiff;
+                return a.producto.localeCompare(b.producto);
+            });
     }
 
     static getWeeklyEvolution(filters = {}, fincaName = '', productoFilter = '') {
@@ -397,6 +401,7 @@ export class SofiaImportModel {
                 }
             }
         });
+        console.log(`[Weekly] ${fincaName || 'All'}: ${all.length} records, budget=${totalBudget}, weeks=${totalWeeks}`);
 
         // ── 4. Build per-week arrays (NOT cumulative) ──
         const labels = [];
@@ -464,7 +469,7 @@ export class SofiaImportModel {
             if (filters.producto && prod !== filters.producto.toUpperCase()) return;
             if (r.cantidad > 0 && (r.n_units > 0 || r.p_units > 0 || r.k_units > 0)) {
                 const key = getGroupKey(r);
-                const uniqueKey = `${r.clasifica}-${r.cod_cuartel}-${r.producto}-${r.ciclo}-${tipo}`;
+                const uniqueKey = `${r.clasifica}-${r.cod_cuartel}-${r.producto}-${r.variedad}-${r.ciclo}-${tipo}`;
 
                 const cycleMatch = !filters.ciclo || r.ciclo === filters.ciclo || r.ciclo === 'Unknown';
                 const fincaMatch = !filters.finca || r.finca_original === filters.finca;

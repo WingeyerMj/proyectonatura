@@ -26,7 +26,9 @@ import {
     renderInformeParametros, renderAplicacionesView,
     renderPresupuestoView, renderUsuariosView,
     renderInformeAplicaciones, renderSofiaResumen, renderSofiaFoliares,
-    renderSofiaHerbicidas, renderFertilizacionComparativa, formatCurrency
+    renderSofiaHerbicidas, renderFertilizacionComparativa, formatCurrency,
+    renderHectareasPorPredio, renderEficienciaChartSection,
+    renderCosechaLevantadoTable
 } from '../views/Views.js';
 
 // ── Constants ──
@@ -36,6 +38,7 @@ const ROLE_MENUS = {
             id: 'informes', label: 'Informes', icon: '📈', section: 'Principal', submenu: [
                 { id: 'jornales', label: 'Jornales', icon: '👷' },
                 { id: 'cosecha', label: 'Cosecha', icon: '🍇' },
+                { id: 'fincas', label: 'Fincas', icon: '🏡' },
                 { id: 'aplicaciones-sofia', label: 'Aplicaciones', icon: '🧪' },
             ]
         },
@@ -45,6 +48,7 @@ const ROLE_MENUS = {
             id: 'informes', label: 'Informes', icon: '📈', section: 'Principal', submenu: [
                 { id: 'jornales', label: 'Jornales', icon: '👷' },
                 { id: 'cosecha', label: 'Cosecha', icon: '🍇' },
+                { id: 'fincas', label: 'Fincas', icon: '🏡' },
                 { id: 'aplicaciones-sofia', label: 'Aplicaciones', icon: '🧪' },
             ]
         },
@@ -54,6 +58,7 @@ const ROLE_MENUS = {
             id: 'informes', label: 'Informes', icon: '📈', section: 'Consulta', submenu: [
                 { id: 'jornales', label: 'Jornales', icon: '👷' },
                 { id: 'cosecha', label: 'Cosecha', icon: '🍇' },
+                { id: 'fincas', label: 'Fincas', icon: '🏡' },
                 { id: 'aplicaciones-sofia', label: 'Aplicaciones', icon: '🧪' },
             ]
         },
@@ -149,7 +154,7 @@ export class AppController {
         this.loadSection(section, user);
     }
 
-    loadSection(section, user) {
+    async loadSection(section, user) {
         const content = document.getElementById('page-content');
         const title = document.getElementById('page-title');
 
@@ -166,8 +171,13 @@ export class AppController {
                 title.textContent = 'Informe de Cosecha';
                 this.renderCosechaSection(content);
                 break;
+            case 'fincas':
+                title.textContent = 'Informe de Fincas';
+                this.renderFincasSection(content);
+                break;
             case 'aplicaciones-sofia':
                 title.textContent = 'Informe de Aplicaciones';
+                await this.loadStaticSofiaData();
                 this.renderAplicacionesSofiaModule(content);
                 break;
         }
@@ -245,7 +255,10 @@ export class AppController {
             const stats = SofiaApiModel.getJornalesStats(data);
             const efficiency = SofiaApiModel.getEfficiencyStats(data);
 
-            content.innerHTML = renderSofiaJornalesStats(stats, efficiency, filters.ciclo);
+            // Render jornales stats + eficiencia chart (Hectáreas por predio moved to Fincas section)
+            const hectareasData = SofiaApiModel.getHectareasPorPredio(data);
+            content.innerHTML = renderSofiaJornalesStats(stats, efficiency, filters.ciclo)
+                + renderEficienciaChartSection(hectareasData);
 
             // Bind Table Cycle Selector to Sync
             document.getElementById('table-jornales-cycle')?.addEventListener('change', (e) => {
@@ -254,7 +267,6 @@ export class AppController {
                 if (mainFilter) {
                     mainFilter.value = newVal;
                     filters.ciclo = newVal;
-                    // Reset cache or force update might be needed if not handled by updateView
                     updateView();
                 }
             });
@@ -266,8 +278,29 @@ export class AppController {
                 this.renderHistoricalChart(histData);
             });
 
-            SofiaApiModel.getHistoricalEfficiencyComparison(filters).then(histData => {
-                this.renderHistoricalEfficiencyChart(histData);
+            // Map display names back to clasifica keywords for the API filter
+            const CLASIFICA_MAP = {
+                'El Espejo 1': 'EEI', 'El Espejo 2': 'EEII', 'El Espejo 3': 'EEIII',
+                'Camino Truncado': 'Camino Truncado', 'La Chimbera': 'La Chimbera', 'Puente Alto': 'Puente Alto'
+            };
+
+            // Helper to render efficiency chart with optional classification filter
+            const renderEfficiency = (clasificacion = '') => {
+                const effFilters = { ...filters, predio: clasificacion ? (CLASIFICA_MAP[clasificacion] || clasificacion) : '' };
+                SofiaApiModel.getHistoricalEfficiencyComparison(effFilters).then(histData => {
+                    this.renderHistoricalEfficiencyChart(histData);
+                });
+                // Update label
+                const label = document.getElementById('eficiencia-filter-label');
+                if (label) label.textContent = clasificacion ? `— ${clasificacion}` : '';
+            };
+
+            // Initial render
+            renderEfficiency();
+
+            // Bind classification filter
+            document.getElementById('filter-eficiencia-clasificacion')?.addEventListener('change', (e) => {
+                renderEfficiency(e.target.value);
             });
 
             // Populate filter lists dynamically based on active data
@@ -482,7 +515,14 @@ export class AppController {
             const data = await SofiaApiModel.fetchCosecha(filters);
             const filtered = SofiaApiModel.applyFilters(data, filters);
             const stats = SofiaApiModel.getCosechaDashboardStats(filtered);
-            dashboard.innerHTML = renderCosechaDashboard(stats);
+
+            // Get full cycle data for Cosecha vs Levantado comparison (Levantado is not in cosecha-only data)
+            const fullCycleData = await SofiaApiModel.fetchCycleData(filters.ciclo || '2025-2026');
+            const fullFiltered = SofiaApiModel.applyFilters(fullCycleData, filters);
+            const clStats = SofiaApiModel.getCosechaLevantadoStats(fullFiltered);
+
+            dashboard.innerHTML = renderCosechaDashboard(stats)
+                + renderCosechaLevantadoTable(clStats);
 
             // Update dynamic filter options
             updateFilterList('filter-cosecha-predio', 'predio', data);
@@ -558,7 +598,74 @@ export class AppController {
         });
     }
 
-    // ── Dashboard Content ──
+    // ── Sección 3: FINCAS ──
+    async renderFincasSection(container) {
+        container.innerHTML = `
+        <div class="sofia-filters animate-fade-in">
+          <div class="filter-group">
+            <label class="form-label">Ciclo Producción</label>
+            <select class="form-select sofia-filter-select" id="filter-fincas-ciclo" style="padding-left:var(--space-4);">
+              <option value="2025-2026">2025-2026</option>
+              <option value="2024-2025">2024-2025</option>
+              <option value="2023-2024">2023-2024</option>
+              <option value="2022-2023">2022-2023</option>
+              <option value="2021-2022">2021-2022</option>
+              <option value="2020-2021">2020-2021</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label class="form-label">Finca</label>
+            <select class="form-select sofia-filter-select" id="filter-fincas-finca" style="padding-left:var(--space-4);">
+              <option value="">Todas</option>
+              <option value="El Espejo">El Espejo</option>
+              <option value="Fincas Viejas">Fincas Viejas</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="fincas-dashboard-container">
+            <div style="padding: var(--space-20); text-align: center; color: var(--text-tertiary);">
+                <div class="spinner" style="margin: 0 auto var(--space-4);"></div>
+                <p>Cargando datos de fincas desde Sofía...</p>
+            </div>
+        </div>
+        `;
+
+        const filters = {
+            ciclo: document.getElementById('filter-fincas-ciclo').value,
+            finca: ''
+        };
+
+        const updateFincasDashboard = async () => {
+            const dashboard = document.getElementById('fincas-dashboard-container');
+            if (!dashboard) return;
+
+            dashboard.innerHTML = '<div style="padding: var(--space-10); text-align: center; color: var(--text-tertiary);"><div class="spinner" style="margin: 0 auto var(--space-4);"></div><p>Actualizando datos...</p></div>';
+
+            try {
+                // Fetch jornales data for Hectáreas por Predio
+                const jornalesData = await SofiaApiModel.fetchJornales(filters);
+                const hectareasData = SofiaApiModel.getHectareasPorPredio(jornalesData);
+
+                dashboard.innerHTML = renderHectareasPorPredio(hectareasData);
+            } catch (err) {
+                dashboard.innerHTML = '<div style="padding: var(--space-10); text-align: center; color: var(--text-tertiary);"><p>Error al cargar datos: ' + err.message + '</p></div>';
+            }
+        };
+
+        // Bind filter changes
+        document.getElementById('filter-fincas-ciclo')?.addEventListener('change', (e) => {
+            filters.ciclo = e.target.value;
+            updateFincasDashboard();
+        });
+        document.getElementById('filter-fincas-finca')?.addEventListener('change', (e) => {
+            filters.finca = e.target.value;
+            updateFincasDashboard();
+        });
+
+        await updateFincasDashboard();
+    }
+
     renderDashboardContent(container) {
         const metrics = {
             totalHectares: FincaModel.getTotalHectares(),
@@ -812,7 +919,7 @@ export class AppController {
         this.bindInformeTabEvents();
     }
 
-    renderInformeTab(tab) {
+    async renderInformeTab(tab) {
         const content = document.getElementById('informe-content');
 
         // Destroy existing charts
@@ -839,6 +946,7 @@ export class AppController {
                 );
                 break;
             case 'aplicaciones':
+                await this.loadStaticSofiaData();
                 this.renderAplicacionesSofiaModule(content);
                 break;
         }
@@ -1711,7 +1819,8 @@ export class AppController {
     }
 
     async loadStaticSofiaData() {
-        if (SofiaImportModel.REGISTROS.length > 0) return; // Already loaded
+        // Always reload CSV data fresh (clear previous cache)
+        SofiaImportModel.REGISTROS = [];
 
         const files = [
             { name: 'EE_aplicaciones.csv', finca: 'El Espejo' },
@@ -1720,7 +1829,7 @@ export class AppController {
 
         for (const file of files) {
             try {
-                const response = await fetch(`/Fuentes/${file.name}`);
+                const response = await fetch(`/Fuentes/${file.name}?t=${Date.now()}`);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const csvText = await response.text();
                 const result = SofiaImportModel.parseCSV(csvText, file.finca);
@@ -1910,40 +2019,6 @@ export class AppController {
 
         renderSplitChart('chart-fert-prod-espejo', 'El Espejo', 'sofia-fert-espejo', 'rgba(59, 130, 246, 0.7)', 'rgba(236, 72, 153, 0.7)');
         renderSplitChart('chart-fert-prod-fincasviejas', 'Fincas Viejas', 'sofia-fert-fincasviejas', 'rgba(245, 158, 11, 0.7)', 'rgba(16, 185, 129, 0.7)');
-
-        // 1. Bar Chart (Product/Cuartel Detail)
-        const ctx = document.getElementById('chart-fert-comparativa');
-        if (ctx) {
-            const labels = data.map(d => {
-                const prod = d.producto.split(' ')[0];
-                const cuartel = d.cuartel.replace('Cuartel ', '').replace('Sector ', '').replace('Parcela ', '');
-                const finca = d.finca.split(' ').pop(); // Shorten Finca name
-                return `${finca} - ${prod} (${cuartel})`;
-            });
-            this.charts['sofia-fert'] = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels,
-                    datasets: [
-                        {
-                            label: 'Comprado (Total)', data: data.map(d => d.metaAnual),
-                            backgroundColor: 'rgba(52, 211, 153, 0.7)', borderColor: 'rgba(52, 211, 153, 1)',
-                            borderWidth: 1, borderRadius: 4, categoryPercentage: 0.6, barPercentage: 0.8
-                        },
-                        {
-                            label: 'Real Aplicado', data: data.map(d => d.real),
-                            backgroundColor: 'rgba(167, 139, 250, 0.7)', borderColor: 'rgba(124, 58, 237, 1)',
-                            borderWidth: 1, borderRadius: 4, categoryPercentage: 0.6, barPercentage: 0.8
-                        }
-                    ]
-                },
-                options: {
-                    ...this.getChartOptions('Litros (L)'),
-                    interaction: { mode: 'index', intersect: false },
-                    scales: { x: { ticks: { maxRotation: 45, minRotation: 45, font: { size: 10 } } } }
-                }
-            });
-        }
 
         // 2. Timeline Charts (Weekly per-week Evolution) — one per finca with product filter
         const weeklyConfigs = [
